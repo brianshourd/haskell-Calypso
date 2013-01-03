@@ -85,10 +85,20 @@ data Swarm a = Swarm {
 instance (PSOVect a, Show a) => Show (Swarm a) where
     show (Swarm ps b _ _ _) = (show $ map pBest $ ps) ++ (show b)
 
+-- Create a swarm by randomly generating n points
+-- within the bounds, making all the particles start
+-- at these points with velocity zero.
+randomSwarm :: (PSOVect a, Random a, RandomGen b) => b -> Int -> (a,a) -> (a -> Double) -> PSOParams -> (Swarm a, b)
+randomSwarm g n bounds f params = (createSwarm ps f params, g') where
+    (ps, g') = getSomeRands n g []
+    getSomeRands 0 gen acc = (acc,gen)
+    getSomeRands m gen acc = getSomeRands (m-1) gen' (next:acc) where
+        (next, gen') = randomR bounds gen
+
 -- Create a swarm in initial state based on the
 -- positions of the particles and the grading
 -- function. Initial velocities are all zero.
-createSwarm :: (PSOVect a) => [a] -> (a -> Double) -> PSOParams-> Swarm a
+createSwarm :: (PSOVect a) => [a] -> (a -> Double) -> PSOParams -> Swarm a
 createSwarm ps f pars = Swarm qs b f pars 0 where
     qs = map (createParticle f) ps
     b = pBest . minimum $ qs
@@ -97,7 +107,7 @@ createSwarm ps f pars = Swarm qs b f pars 0 where
 -- Update the swarm one step, updating every 
 -- particle's position and velocity, and the
 -- best values found so far
-updateSwarm :: (PSOVect a) => Swarm a -> StdGen -> (Swarm a, StdGen)
+updateSwarm :: (PSOVect a, RandomGen b) => Swarm a -> b -> (Swarm a, b)
 updateSwarm s@(Swarm ps b f pars i) g = (Swarm qs b' f pars (i+1), g') where
     (qs, g', b') = foldl' helper ([], g, b) ps
     helper (acc, gen, best) p = (p':acc, gen', min best (pBest p')) where
@@ -106,11 +116,11 @@ updateSwarm s@(Swarm ps b f pars i) g = (Swarm qs b' f pars (i+1), g') where
 -- Update a particle one step. Called by updateSwarm
 -- and requires the swarm that the particle belongs
 -- to as a parameter
-updateParticle :: (PSOVect a) => Particle a -> Swarm a -> StdGen -> (Particle a, StdGen)
+updateParticle :: (PSOVect a, RandomGen b) => Particle a -> Swarm a -> b -> (Particle a, b)
 updateParticle (Particle p v bp) (Swarm ps b f pars i) g = (Particle p' v' bp', g'') where
     p' = pAdd p v'
-    (r1, g') = randomR (0,1) g :: (Double, StdGen)
-    (r2, g'') = randomR (0,1) g' :: (Double, StdGen)
+    (r1, g') = randomR (0,1) g
+    (r2, g'') = randomR (0,1) g'
     dp = pSubtract (pt bp) p
     dg = pSubtract (pt b) p
     v' = newVel pars
