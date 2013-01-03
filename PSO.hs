@@ -4,7 +4,7 @@
 {-# LANGUAGE TypeSynonymInstances #-}
 {-# LANGUAGE FlexibleInstances #-}
 
-module PSO (PSOVect(..), PSOCand(..), Particle(..), Swarm(..), PSOParams(..), createSwarm, updateSwarm, Point) where
+module PSO (PSOVect(..), PSOCand(..), Particle(..), Swarm(..), PSOParams(..), createSwarm, updateSwarm) where
 import System.Random
 import Data.List (foldl')
 import Data.Function (on)
@@ -14,31 +14,12 @@ import Data.Function (on)
 -- to use Points to represent positions and velocities
 -- of particles (so we can update a position based on
 -- its velocity, update its velocity semi-randomly, etc.)
-
-class (Eq a, Show a) => PSOVect a where
+class (Eq a) => PSOVect a where
     pAdd :: a -> a -> a
     pScale :: Double -> a -> a
     pSubtract :: a -> a -> a
     pZero :: a
     pSubtract v1 v2 = pAdd v1 $ pScale (-1) v2
-
--- One example is for points in 2D space
-type Point = (Double, Double)
-
--- Let us randomly generate points
-instance Random Point where
-    random g = ((x, y), g'') where
-        (x, g')  = random g
-        (y, g'') = random g'
-    randomR ((a1, b1), (a2, b2)) g = ((x, y), g'') where
-        (x, g')  = randomR (a1, a2) g
-        (y, g'') = randomR (b1, b2) g'
-
--- Make it a PSOVect, to use in the algorithm
-instance PSOVect Point where
-    pAdd (x1, y1) (x2, y2) = (x1 + x2, y1 + y2)
-    pScale r (x,y) = (r * x, r * y)
-    pZero = (0,0)
 
 -- A candidate for a global minimum. Stores both the
 -- location of the possible minimum, and the value of
@@ -49,7 +30,9 @@ data PSOCand a = PSOCand {
     } deriving (Show, Eq)
 
 -- Better/worse candidates are determined by their values
-instance (PSOVect a) => Ord (PSOCand a) where
+-- Need `Eq a` in order to assure that PSOCand a is an
+-- instance of Eq, of which Ord is a superclass
+instance (Eq a) => Ord (PSOCand a) where
     compare = compare `on` val
 
 -- Particles know their location, velocity, and the
@@ -63,8 +46,10 @@ data Particle a = Particle {
     } deriving (Eq, Show)
 
 -- Compare points based on their best value
-instance (PSOVect a) => Ord (Particle a) where
-    compare = compare `on` (val . pBest)
+-- Need `Eq a` in order to assure that Particle a is an
+-- instance of Eq, of which Ord is a superclass
+instance (Eq a) => Ord (Particle a) where
+    compare = compare `on` pBest
 
 -- Holds the parameters used to update particle 
 -- velocities, see "Parameter Selection in Particle
@@ -86,8 +71,9 @@ defaultPSOParams :: PSOParams
 defaultPSOParams = PSOParamsStatic 1 2 2
 
 -- A Swarm keeps track of all the particles in the swarm,
--- the function that the swarm seeks to minimize, and the
--- best location/value found so far
+-- the function that the swarm seeks to minimize, 
+-- the parameters, the current iteration (for parameters),
+-- and the best location/value found so far
 data Swarm a = Swarm {
     parts :: [Particle a],  -- particles in the swarm
     gBest :: PSOCand a,     -- best position found
@@ -96,7 +82,7 @@ data Swarm a = Swarm {
     iteration :: Integer    -- current iteration
     }
 
-instance (PSOVect a) => Show (Swarm a) where
+instance (PSOVect a, Show a) => Show (Swarm a) where
     show (Swarm ps b _ _ _) = (show $ map pBest $ ps) ++ (show b)
 
 -- Create a swarm in initial state based on the
@@ -136,4 +122,38 @@ updateParticle (Particle p v bp) (Swarm ps b f pars i) g = (Particle p' v' bp', 
          (pScale ((c2 i) * r2) dg)
     bp' = min bp $ PSOCand p' (f p')
 
+-- ===============
+-- Instances
+-- ===============
 
+-- Declaration for pairs of fractionals
+-- e.g. (Double, Double), (Float, Float), (Rational, Rational), etc.
+instance (Fractional a, Eq a, Random a) => Random (a, a) where
+    random g = ((x, y), g'') where
+        (x, g')  = random g
+        (y, g'') = random g'
+    randomR ((a1, b1), (a2, b2)) g = ((x, y), g'') where
+        (x, g')  = randomR (a1, a2) g
+        (y, g'') = randomR (b1, b2) g'
+
+instance (Fractional a, Eq a) => PSOVect (a, a) where
+    pAdd (x1, y1) (x2, y2) = (x1 + x2, y1 + y2)
+    pScale r (x,y) = ((realToFrac r) * x, (realToFrac r) * y)
+    pZero = (0,0)
+
+-- Declaration for triples of fractionals
+-- e.g. (Double, Double), (Float, Float), (Rational, Rational), etc.
+instance (Fractional a, Eq a, Random a) => Random (a, a, a) where
+    random g = ((x, y, z), g''') where
+        (x, g')   = random g
+        (y, g'')  = random g'
+        (z, g''') = random g''
+    randomR ((a1, b1, c1), (a2, b2, c2)) g = ((x, y, z), g''') where
+        (x, g')   = randomR (a1, a2) g
+        (y, g'')  = randomR (b1, b2) g'
+        (z, g''') = randomR (c1, c2) g''
+
+instance (Fractional a, Eq a) => PSOVect (a, a, a) where
+    pAdd (x1, y1, z1) (x2, y2, z2) = (x1 + x2, y1 + y2, z1 + z2)
+    pScale r (x,y,z) = ((realToFrac r) * x, (realToFrac r) * y, (realToFrac r) * z)
+    pZero = (0,0,0)
