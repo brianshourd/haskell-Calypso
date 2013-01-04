@@ -4,7 +4,7 @@
 {-# LANGUAGE TypeSynonymInstances #-}
 {-# LANGUAGE FlexibleInstances #-}
 
-module PSO (PSOVect(..), PSOCand(..), Particle(..), Swarm(..), PSOParams(..), createSwarm, updateSwarm) where
+module PSO (PSOVect(..), PSOCand(..), Particle(..), Swarm(..), PSOParams(..), randomSwarm, createSwarm, updateSwarm) where
 import System.Random
 import Data.List (foldl')
 import Data.Function (on)

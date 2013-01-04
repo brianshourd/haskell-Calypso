@@ -129,4 +129,61 @@ adjust parameters to try to make our swarm behave better.
 
 ## Parameter adjustment
 
+In the paper "Parameter Selection in Particle Swarm Optimization" by
+Yuhui Shi and Russell C. Eberhart, they make the case that the
+parameters used in performing the individual particle updates should be
+chosen carefully. In fact, they suggest that parameters which vary over
+time can perform very well, especially the parameter they call "inertia
+weight".
 
+The `PSOParams` type exists to fill this void.
+
+    data PSOParams = PSOParamsStatic
+        Double  -- inertia weight
+        Double  -- tendancy toward local
+        Double  -- tendancy toward global
+        | PSOParamsDynamic 
+        (Integer -> Double)
+        (Integer -> Double)
+        (Integer -> Double)
+
+It is either a static type or a dynamic type. That is, the parameters
+are either constant, or they vary over time. The original parameters of
+1, 2, and 2 are available as `defaultPSOParams`, which we used above.
+
+    defaultPSOParams :: PSOParams
+    defaultPSOParams = PSOParamsStatic 1 2 2
+
+However, should you wish to use other parameters, this is the way to do
+it. For example, if we think that our search might behave better by
+using a linear adjustment for the inertia weight, starting at 1.0 and
+decending to 0.8 over 50 updates, we could create our own parameters.
+
+    
+    main = do
+        gen <- getStdGen
+        let f = (\(x,y) -> x^2 + y^2) :: (Double, Double) -> Double
+            pars = PSOParamsDynamic
+                (\i -> case () of
+                    _ | i < 50  -> 1.0 - (fromInteger i) * 0.016
+                      | i >= 50 -> 0.8)
+                (const 1.0)
+                (const 1.0)
+            (s,g) = randomSwarm
+                gen             -- Seed for randomness
+                20              -- number of particles
+                ((-5,-5),(5,5)) -- range to look
+                f               -- function to optimize
+                pars
+
+Indeed, if we now look at the best values, we get
+
+    > take 15 $ map (val . gBest . fst) $ iterate (uncurry updateSwarm) (s,g)
+    [0.8199930172277934,8.635380746111755e-2,4.274564780384296e-2,4.274564780384296e-2,4.274564780384296e-2,7.331914679625428e-3,7.331914679625428e-3,7.331914679625428e-3,7.331914679625428e-3,1.497623382076038e-3,1.497623382076038e-3,1.497623382076038e-3,1.3584249637098452e-3,1.3584249637098452e-3,1.2008987821146627e-3]
+
+We see steady improvement, instead of stagnation. Well, actually you
+can't really see it from just this - the important thing is that it can
+actually help.
+
+For more information, see the documtation, and/or read the code itself.
+Before you do either of those, though, read the original paper.
