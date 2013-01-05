@@ -190,3 +190,18 @@ actually help.
 
 For more information, see the documtation, and/or read the code itself.
 Before you do either of those, though, read the original paper.
+
+## Things to do
+
+### Like Now
+
+* Built test suite
+* Submit to Hackage
+* Write example programs
+
+### Future releases
+
+* Allow for bounded searching 
+* Automate discovering solutions:
+    * Target Distance
+    * Clustering
