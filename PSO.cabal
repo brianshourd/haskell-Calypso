@@ -1,0 +1,17 @@
+name:                PSO
+version:             0.1.0.0
+synopsis:            Particle Swarm Optimization library
+-- description:         
+license:             BSD3
+license-file:        LICENSE
+author:              Brian Shourd
+maintainer:          brian.shourd@gmail.com
+copyright:           2013
+-- category:            
+build-type:          Simple
+cabal-version:       >=1.8
+
+library
+  exposed-modules:     PSO
+  -- other-modules:       
+  build-depends:       base ==4.5.*, random ==1.0.*
