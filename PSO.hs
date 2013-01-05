@@ -1,19 +1,31 @@
 {-# LANGUAGE TypeSynonymInstances #-}
 {-# LANGUAGE FlexibleInstances #-}
 
--- | A short script to do some testing with Particle Swarm Optimization,
--- based on the paper by James Kennedy and Russell Eberhart available at
--- http://www.cs.tufts.edu/comp/150GA/homeworks/hw3/_reading6%201995%20particle%20swarming.pdf
+{- | 
+A small module to perform optimization using Particle Swarm Optimization
+(PSO), based on the paper by James Kennedy and Russell Eberhart:
+  
+Kennedy, James, and Russell Eberhart. \"Particle swarm
+optimization.\" /Neural Networks, 1995. Proceedings., IEEE/
+/International Conference on./ Vol. 4. IEEE, 1995.
+  
+I highly recommend that you find and read this paper (it's only 7
+pages) if you are interested in PSO at all. However, the wikipedia
+entry is also quite good:
+<http://en.wikipedia.org/wiki/Particle_swarm_optimization>
+-}
+
 module PSO (PSOVect(..), PSOCand(..), Particle(..), Swarm(..), PSOParams(..), randomSwarm, createSwarm, updateSwarm) where
 import System.Random
 import Data.List (foldl')
 import Data.Function (on)
 
--- | Represents the position and velocity of a particle
--- The four functions are necessary in order
--- to use Points to represent positions and velocities
--- of particles (so we can update a position based on
--- its velocity, update its velocity semi-randomly, etc.)
+{- | 
+Represents the position and velocity of a particle. The four functions
+are necessary in order to use Points to represent positions and
+velocities of particles (so we can update a position based on its
+velocity, update its velocity semi-randomly, etc.)
+-}
 class (Eq a) => PSOVect a where
     pAdd :: a -> a -> a
     pScale :: Double -> a -> a
@@ -21,40 +33,50 @@ class (Eq a) => PSOVect a where
     pZero :: a
     pSubtract v1 v2 = pAdd v1 $ pScale (-1) v2
 
--- | A candidate for a global minimum. Stores both the
--- location of the possible minimum, and the value of
--- the function to minimize at that point.
+{- |
+A candidate for a global minimum. Stores both the location of the
+possible minimum, and the value of the function to minimize at that
+point.
+-}
 data PSOCand a = PSOCand {
     pt :: a, 
     val :: Double
     } deriving (Show, Eq)
 
--- | Better/worse candidates are determined by their values
--- Need `Eq a` in order to assure that PSOCand a is an
--- instance of Eq, of which Ord is a superclass
+{- | 
+Better/worse @PSOCands@ are determined by their values. Need @Eq a@ in
+order to assure that @PSOCand@ a is an instance of @Eq@, of which @Ord@
+is a superclass
+-}
 instance (Eq a) => Ord (PSOCand a) where
     compare = compare `on` val
 
--- | Particles know their location, velocity, and the
--- best location/value they've visited. Individual
--- particles do not know the global minimum, but the
--- Swarm they belong to does
+{- | 
+@Particles@ know their location, velocity, and the best location/value
+they've visited. Individual @Particles@ do not know the global minimum,
+but the @Swarm@ they belong to does
+-}
 data Particle a = Particle {
     pos :: a,       -- ^ position of particle
     vel :: a,       -- ^ velocity of particle
     pBest :: PSOCand a  -- ^ best position this particle has found
     } deriving (Eq, Show)
 
--- | Compare points based on their best value;
--- Need `Eq a` in order to assure that Particle a is an
--- instance of Eq, of which Ord is a superclass
+{- | 
+Compare points based on their best value.  Need @Eq a@ in order to
+assure that @Particle a@ is an instance of @Eq@, of which @Ord@ is a
+superclass
+-}
 instance (Eq a) => Ord (Particle a) where
     compare = compare `on` pBest
 
--- | Holds the parameters used to update particle ;
--- velocities, see "Parameter Selection in Particle
--- Swarm Optimization" by Yuhui Shi and 
--- Russell C. Eberhart
+{- | 
+Holds the parameters used to update particle velocities, see 
+
+Shi, Yuhui, and Russell Eberhart. \"Parameter selection in particle swarm
+optimization.\" /Evolutionary Programming VII./ Springer
+Berlin/Heidelberg, 1998.
+-}
 data PSOParams = PSOParamsStatic
     Double  -- inertia weight
     Double  -- tendancy toward local
@@ -64,16 +86,18 @@ data PSOParams = PSOParamsStatic
     (Integer -> Double)  -- tendancy toward local
     (Integer -> Double)  -- tendancy toward global
 
--- | The original parameters given in the 1995 paper
--- "Particle Swarm Optimization" by James Kennedy 
--- and Russell Eberhart
+{- | 
+The original parameters given in the 1995 paper \"Particle Swarm
+Optimization\" by James Kennedy and Russell Eberhart
+-}
 defaultPSOParams :: PSOParams
 defaultPSOParams = PSOParamsStatic 1 2 2
 
--- | A Swarm keeps track of all the particles in the swarm,
--- the function that the swarm seeks to minimize, 
--- the parameters, the current iteration (for parameters),
--- and the best location/value found so far
+{- | 
+A @Swarm@ keeps track of all the particles in the swarm, the function
+that the swarm seeks to minimize, the parameters, the current iteration
+(for parameters), and the best location/value found so far
+-}
 data Swarm a = Swarm {
     parts :: [Particle a],  -- ^ particles in the swarm
     gBest :: PSOCand a,     -- ^ best position found
@@ -85,9 +109,10 @@ data Swarm a = Swarm {
 instance (PSOVect a, Show a) => Show (Swarm a) where
     show (Swarm ps b _ _ _) = (show $ map pBest $ ps) ++ (show b)
 
--- | Create a swarm by randomly generating n points
--- within the bounds, making all the particles start
--- at these points with velocity zero.
+{- | 
+Create a swarm by randomly generating n points within the bounds, making
+all the particles start at these points with velocity zero.
+-}
 randomSwarm :: (PSOVect a, Random a, RandomGen b) 
     => b        -- ^ A random seed
     -> Int      -- ^ Number of particles
@@ -101,27 +126,30 @@ randomSwarm g n bounds f params = (createSwarm ps f params, g') where
     getSomeRands m gen acc = getSomeRands (m-1) gen' (next:acc) where
         (next, gen') = randomR bounds gen
 
--- | Create a swarm in initial state based on the
--- positions of the particles and the grading
--- function. Initial velocities are all zero.
+{- | 
+Create a swarm in initial state based on the positions of the particles
+and the grading function. Initial velocities are all zero.
+-}
 createSwarm :: (PSOVect a) => [a] -> (a -> Double) -> PSOParams -> Swarm a
 createSwarm ps f pars = Swarm qs b f pars 0 where
     qs = map (createParticle f) ps
     b = pBest . minimum $ qs
     createParticle f' p = Particle p pZero (PSOCand p (f' p))
 
--- | Update the swarm one step, updating every 
--- particle's position and velocity, and the
--- best values found so far
+{- | 
+Update the swarm one step, updating every particle's position and
+velocity, and the best values found so far
+-}
 updateSwarm :: (PSOVect a, RandomGen b) => Swarm a -> b -> (Swarm a, b)
 updateSwarm s@(Swarm ps b f pars i) g = (Swarm qs b' f pars (i+1), g') where
     (qs, g', b') = foldl' helper ([], g, b) ps
     helper (acc, gen, best) p = (p':acc, gen', min best (pBest p')) where
         (p',gen') = updateParticle p s gen
 
--- | Update a particle one step. Called by updateSwarm
--- and requires the swarm that the particle belongs
--- to as a parameter
+{- | 
+Update a particle one step. Called by updateSwarm and requires the swarm
+that the particle belongs to as a parameter
+-}
 updateParticle :: (PSOVect a, RandomGen b) => Particle a -> Swarm a -> b -> (Particle a, b)
 updateParticle (Particle p v bp) (Swarm ps b f pars i) g = (Particle p' v' bp', g'') where
     p' = pAdd p v'
@@ -142,8 +170,10 @@ updateParticle (Particle p v bp) (Swarm ps b f pars i) g = (Particle p' v' bp', 
 -- Instances
 -- ===============
 
--- Declaration for pairs of fractionals
--- e.g. (Double, Double), (Float, Float), (Rational, Rational), etc.
+{- 
+Declaration for pairs of fractionals e.g. (Double, Double), (Float,
+Float), (Rational, Rational), etc.
+-}
 instance (Fractional a, Eq a, Random a) => Random (a, a) where
     random g = ((x, y), g'') where
         (x, g')  = random g
@@ -157,8 +187,10 @@ instance (Fractional a, Eq a) => PSOVect (a, a) where
     pScale r (x,y) = ((realToFrac r) * x, (realToFrac r) * y)
     pZero = (0,0)
 
--- Declaration for triples of fractionals
--- e.g. (Double, Double), (Float, Float), (Rational, Rational), etc.
+{- 
+Declaration for triples of fractionals e.g. (Double, Double), (Float,
+Float), (Rational, Rational), etc.
+-}
 instance (Fractional a, Eq a, Random a) => Random (a, a, a) where
     random g = ((x, y, z), g''') where
         (x, g')   = random g
