@@ -1,7 +1,10 @@
 haskell-ParticleSwarmOptimization
 =================================
 
-This is a small library for doing Particle Swarm Optimization (PSO) in
+Firstly, let me say that this is a work in progress. Notably, it is
+still missing full documentation, and has not been thouroughly tested.
+
+This is a small module for doing Particle Swarm Optimization (PSO) in
 Haskell. For an overview of what PSO is, see the paper "Particle Swarm
 Optimization" by James Kennedy and Russel Eberhart. Alternately,
 [wikipedia's
