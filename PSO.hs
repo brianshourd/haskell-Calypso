@@ -162,7 +162,7 @@ updateParticle (Particle p v bp) (Swarm ps b f pars i) g = (Particle p' v' bp', 
          pAdd (pScale (c1 * r1) dp) $
          pScale (c2 * r2) dg
     newVel (PSOParamsDynamic omega c1 c2) = pAdd (pScale (omega i) v) $ 
-         pAdd (pScale (c1 i * r1) dp)
+         pAdd (pScale (c1 i * r1) dp) $
          pScale (c2 i * r2) dg
     bp' = min bp $ PSOCand p' (f p')
 
