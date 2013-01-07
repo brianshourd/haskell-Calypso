@@ -195,9 +195,9 @@ Before you do either of those, though, read the original paper.
 
 ### Like Now
 
-* Built test suite
-* Submit to Hackage
+* Improve documentation
 * Write example programs
+* Submit to Hackage
 
 ### Future releases
 
