@@ -107,7 +107,7 @@ data Swarm a = Swarm {
     }
 
 instance (PSOVect a, Show a) => Show (Swarm a) where
-    show (Swarm ps b _ _ _) = (show $ map pBest $ ps) ++ (show b)
+    show (Swarm ps b _ _ _) = show ( map pBest ps) ++ show b
 
 {- | 
 Create a swarm by randomly generating n points within the bounds, making
@@ -160,10 +160,10 @@ updateParticle (Particle p v bp) (Swarm ps b f pars i) g = (Particle p' v' bp', 
     v' = newVel pars
     newVel (PSOParamsStatic omega c1 c2) = pAdd (pScale omega v) $ 
          pAdd (pScale (c1 * r1) dp) $
-         (pScale (c2 * r2) dg)
+         pScale (c2 * r2) dg
     newVel (PSOParamsDynamic omega c1 c2) = pAdd (pScale (omega i) v) $ 
-         pAdd (pScale ((c1 i) * r1) dp) $
-         (pScale ((c2 i) * r2) dg)
+         pAdd (pScale (c1 i * r1) dp)
+         pScale (c2 i * r2) dg
     bp' = min bp $ PSOCand p' (f p')
 
 -- ===============
@@ -184,7 +184,7 @@ instance (Fractional a, Eq a, Random a) => Random (a, a) where
 
 instance (Fractional a, Eq a) => PSOVect (a, a) where
     pAdd (x1, y1) (x2, y2) = (x1 + x2, y1 + y2)
-    pScale r (x,y) = ((realToFrac r) * x, (realToFrac r) * y)
+    pScale r (x,y) = (realToFrac r * x, realToFrac r * y)
     pZero = (0,0)
 
 {- 
@@ -203,5 +203,5 @@ instance (Fractional a, Eq a, Random a) => Random (a, a, a) where
 
 instance (Fractional a, Eq a) => PSOVect (a, a, a) where
     pAdd (x1, y1, z1) (x2, y2, z2) = (x1 + x2, y1 + y2, z1 + z2)
-    pScale r (x,y,z) = ((realToFrac r) * x, (realToFrac r) * y, (realToFrac r) * z)
+    pScale r (x,y,z) = (realToFrac r * x, realToFrac r * y, realToFrac r * z)
     pZero = (0,0,0)
