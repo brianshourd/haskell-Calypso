@@ -21,24 +21,44 @@ import Data.List (foldl')
 import Data.Function (on)
 
 {- | 
-Represents the position and velocity of a particle. Minimal complete definition: @'pAdd'@, @'pZero'@, @'pScale'@
+Represents the position and velocity of a particle. 
 
-Theoretically, a type belonging to the class @PSOVectshould@ form a /real vector space/ (<http://en.wikipedia.org/wiki/Vector_space#Definition>). That is, it should satisfy the vector space laws: 
+Minimal complete definition: @'pAdd'@, @'pZero'@, @'pScale'@
 
-Suppose that the type @a@ is an instance of @'PSOVect'@. for all u, v, and w of type @a@, and all r and s of type @Double@, we should have:
+Theoretically, a type belonging to the class @PSOVect@ should form a
+/real vector space/
+(<http://en.wikipedia.org/wiki/Vector_space#Definition>). That is, it
+should satisfy the vector space laws: 
 
-1. @(u `pAdd` v) `pAdd` w = u `pAdd` (v `pAdd` w)@ [pAdd is associative]
-2. @v `pAdd` pZero = pZero `pAdd` v = v@ [pZero is identity]
-3. For every @v@ there is an additive inverse @v'@ such that @v `pAdd` v' = v' `pAdd` v = pZero@
-4. @v `pAdd` w = w `pAdd` v@
-5. @r `pScale` (v `pAdd` w) = (r `pScale` v) `pAdd` (r `pScale` w)@ 
-6. @(r + s) `pScale` v = (r `pScale` v) `pAdd` (s `pScale` v)@ 
-7. @(r * s) `pScale` v = r `pScale` (s `pScale` v)@
-8. @1 `pScale` v = v@
+Suppose that the type @a@ is an instance of @'PSOVect'@. for all @u@,
+@v@, and @w@ of type @a@, and all @r@ and @s@ of type @Double@, we
+should have:
 
-Notice that the first 2 laws are the Monoid laws (mAppend = pAdd, mempty = pZero) and the first 4 are the laws of an abelian group.
+    1. @pAdd (pAdd u v) w = pAdd u (pAdd v w)@ [pAdd is associative]
 
-If these laws are satisfied, we can prove that the additive inverse of @v@ is @(-1) `pScale` v@, so we can automatically define @'pSubtract'@. However, you may provide a faster implementation if you wish.
+    2. @pAdd v pZero = pAdd pZero v = v@ [pZero is additive identity]
+
+    3. For every @v@ there is an additive inverse @v'@ such that @pAdd v
+    v' = pAdd v' v = pZero@
+
+    4. @pAdd v w = pAdd w v@ [pAdd is commutative]
+
+    5. @pScale r (pAdd v w) = pAdd (pScale r v) (pScale r w)@
+        [Distributivity]
+
+    6. @pScale (r + s) v = pAdd (pScale r v) (pScale s v)@
+        [Distributivity]
+
+    7. @pScale (r * s) v = pScale r (pScale s v)@ [Compatibility]
+
+    8. @pScale 1 v = v@ [Identity scalar]
+
+Notice that the first 2 laws are the Monoid laws (mAppend = pAdd, mempty
+= pZero) and the first 4 are the laws of an abelian group.
+
+If these laws are satisfied, we can prove that the additive inverse of
+@v@ is @pScale (-1) v@, so we can automatically define @'pSubtract'@.
+However, you may provide a faster implementation if you wish.
 -}
 class (Eq a) => PSOVect a where
     pAdd :: a -> a -> a
