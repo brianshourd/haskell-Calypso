@@ -146,6 +146,13 @@ updateSwarm s@(Swarm ps b f pars i) g = (Swarm qs b' f pars (i+1), g') where
     helper (acc, gen, best) p = (p':acc, gen', min best (pBest p')) where
         (p',gen') = updateParticle p s gen
 
+{- |
+Update a swarm repeatedly. Absorbs a RandomGen.
+-}
+
+iterateSwarm :: (PSOVect a, RandomGen b) => Swarm a -> b -> [Swarm a]
+iterateSwarm s g = map fst $ iterate (uncurry updateSwarm) (s,g)
+
 {- | 
 Update a particle one step. Called by updateSwarm and requires the swarm
 that the particle belongs to as a parameter
