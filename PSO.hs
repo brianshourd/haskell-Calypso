@@ -21,16 +21,30 @@ import Data.List (foldl')
 import Data.Function (on)
 
 {- | 
-Represents the position and velocity of a particle. The four functions
-are necessary in order to use Points to represent positions and
-velocities of particles (so we can update a position based on its
-velocity, update its velocity semi-randomly, etc.)
+Represents the position and velocity of a particle. Minimal complete definition: @'pAdd'@, @'pZero'@, @'pScale'@
+
+Theoretically, a type belonging to the class @PSOVectshould@ form a /real vector space/ (<http://en.wikipedia.org/wiki/Vector_space#Definition>). That is, it should satisfy the vector space laws: 
+
+Suppose that the type @a@ is an instance of @'PSOVect'@. for all u, v, and w of type @a@, and all r and s of type @Double@, we should have:
+
+1. @(u `pAdd` v) `pAdd` w = u `pAdd` (v `pAdd` w)@ [pAdd is associative]
+2. @v `pAdd` pZero = pZero `pAdd` v = v@ [pZero is identity]
+3. For every @v@ there is an additive inverse @v'@ such that @v `pAdd` v' = v' `pAdd` v = pZero@
+4. @v `pAdd` w = w `pAdd` v@
+5. @r `pScale` (v `pAdd` w) = (r `pScale` v) `pAdd` (r `pScale` w)@ 
+6. @(r + s) `pScale` v = (r `pScale` v) `pAdd` (s `pScale` v)@ 
+7. @(r * s) `pScale` v = r `pScale` (s `pScale` v)@
+8. @1 `pScale` v = v@
+
+Notice that the first 2 laws are the Monoid laws (mAppend = pAdd, mempty = pZero) and the first 4 are the laws of an abelian group.
+
+If these laws are satisfied, we can prove that the additive inverse of @v@ is @(-1) `pScale` v@, so we can automatically define @'pSubtract'@. However, you may provide a faster implementation if you wish.
 -}
 class (Eq a) => PSOVect a where
     pAdd :: a -> a -> a
+    pZero :: a
     pScale :: Double -> a -> a
     pSubtract :: a -> a -> a
-    pZero :: a
     pSubtract v1 v2 = pAdd v1 $ pScale (-1) v2
 
 {- |
