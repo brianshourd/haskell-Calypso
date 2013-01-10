@@ -15,7 +15,7 @@ entry is also quite good:
 <http://en.wikipedia.org/wiki/Particle_swarm_optimization>
 -}
 
-module PSO (PSOVect(..), PSOCand(..), Particle(..), Swarm(..), PSOParams(..), randomSwarm, createSwarm, updateSwarm) where
+module PSO (PSOVect(..), PSOCand(..), Particle(..), Swarm(..), PSOParams(..), randomSwarm, createSwarm, updateSwarm, iterateSwarm) where
 import System.Random
 import Data.List (foldl')
 import Data.Function (on)
@@ -263,8 +263,7 @@ instance (PSOVect a, PSOVect b) => PSOVect (a, b) where
     pZero = (pZero, pZero)
 
 {- 
-Declaration for triples of fractionals e.g. (Double, Double), (Float,
-Float), (Rational, Rational), etc.
+Declaration for triples of PSOVects
 
 Mathematically, this is the direct sum of vector spaces.
 -}
@@ -282,3 +281,13 @@ instance (PSOVect a, PSOVect b, PSOVect c) => PSOVect (a, b, c) where
     pAdd (x1, y1, z1) (x2, y2, z2) = (pAdd x1 x2, pAdd y1 y2, pAdd z1 z2)
     pScale r (x,y,z) = (pScale r x, pScale r y, pScale r z)
     pZero = (pZero,pZero,pZero)
+
+{-
+Delaration for lists of PSOVects.
+
+Mathematically, this is just the direct sum of vector spaces.
+-}
+instance (PSOVect a) => PSOVect [a] where
+    pAdd = zipWith pAdd
+    pScale r = map $ pScale r
+    pZero = repeat pZero

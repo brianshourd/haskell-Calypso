@@ -2,7 +2,7 @@ haskell-ParticleSwarmOptimization
 =================================
 
 Firstly, let me say that this is a work in progress. Notably, it is
-still missing full documentation, and has not been thouroughly tested.
+still missing some examples and features. What is here, though, works.
 
 This is a small module for doing Particle Swarm Optimization (PSO) in
 Haskell. For an overview of what PSO is, see the paper "Particle Swarm
@@ -14,18 +14,21 @@ pretty good.
 Essentially, we have a function `f :: a -> Double` which we want to
 optimize. That is, we want to find some `a` which minimizes `f`. To do
 this, we will create a swarm of particles, then let those particles run
-free until a good solution is found. To do this, just make your `a`
-data (the input data of the function to minimize) an instance of the
+free until a good solution is found. This is done by makeing the `a`
+type (the input type of the function to minimize) an instance of the
 `PSOVect` class.
 
 ## Make a PSOVect instance
 
 Ex: Suppose we want to minimize the function `f (x,y) = x^2 + y^2`. The
 type signature of `f` is `f :: (Double, Double) -> Double`. We'll need
-to make `(Double, Double)` an instance of the `PSOVect` typeclass. In
-particular, we'll need to define a way to add together two `(Double,
-Double)`s, a way to multiply a `(Double, Double)` by a `Double` scalar,
-and a zero for `(Double, Double)`. That instance looks like:
+to make `(Double, Double)` an instance of the `PSOVect` typeclass
+[Footnote: Actually, (Double, Double) is one of the pre-packaged
+instances of PSOVect, so we can skip this step. For mosttypes, though,
+we can't]. In particular, we'll need to define a way to add together two
+`(Double, Double)`s, a way to multiply a `(Double, Double)` by a
+`Double` scalar, and a zero for `(Double, Double)`. That instance looks
+like:
 
     instance PSOVect (Double, Double) where
         pAdd (x1, y1) (x2, y2) = (x1 + x2, y1 + y2)
@@ -53,17 +56,16 @@ So we declare an instance
             (x, g')  = randomR (a1, a2) g
             (y, g'') = randomR (b1, b2) g'
 
-Now we can call `randomSwarm`:
+[Footnote: again, this has already been done for (Double, Double)] Now we can call `randomSwarm`:
 
-    main = do
-        gen <- getStdGen
-        let f = (\(x,y) -> x^2 + y^2) :: (Double, Double) -> Double
-            (s,g) = randomSwarm
-                gen             -- Seed for randomness
-                20              -- number of particles
-                ((-5,-5),(5,5)) -- range to look
-                f               -- function to optimize
-                defaultPSOParams    -- default parameters
+    ghci> gen <- getStdGen
+    ghci> let f = (\(x,y) -> x^2 + y^2) :: (Double, Double) -> Double
+    ghci> let (s,g) = randomSwarm
+            gen             -- Seed for randomness
+            20              -- number of particles
+            ((-5,-5),(5,5)) -- range to look
+            f               -- function to optimize
+            defaultPSOParams    -- default parameters
 
 The second way to create a swarm is through `createSwarm`.
 
@@ -99,7 +101,7 @@ The particles move semi-randomly, so we need a `RandomGen` to update the
 swarm. Fortunately, we get a new one back when we're done. If we want to
 just continually update over and over, we can call
 
-    let ss = fst . unzip $ iterate (uncurry updateSwarm) (s,g)
+    ghci> let ss = iterateSwarm s g
 
 Then `ss` is of type `[Swarm (Double, Double)]`, and each element is the
 next generation/iteration of the swarm. Hopefully, this swarm has the
@@ -115,16 +117,16 @@ list, we can find data about them just by using `map` and some built in
 functions. For example, if we just want to know what the best value of
 `f` the swarm has found with each iteration, we can 
 
-    let bs = map (val . gBest) ss
+    ghci> let bs = map (val . gBest) ss
 
 In this case, we might get e.g.
 
-    > take 5 bs
+    ghci> take 5 bs
     [2.4934653863021836,0.2093513968956252,5.310530725404583e-3,5.310530725404583e-3,5.310530725404583e-3]
 
 Our swarm rapidly converged on 0.00531 as the lowest value. It occurs at
 
-    > pt . gBest $ ss !! 2
+    ghci> pt . gBest $ ss !! 2
     (-6.063899754881441e-2,4.0415871902997e-2)
 
 Indeed, this is pretty good. Maybe good enough, maybe not. We can always
@@ -181,7 +183,7 @@ decending to 0.8 over 50 updates, we could create our own parameters.
 
 Indeed, if we now look at the best values, we get
 
-    > take 15 $ map (val . gBest . fst) $ iterate (uncurry updateSwarm) (s,g)
+    ghci> take 15 $ map (val . gBest . fst) $ iterate (uncurry updateSwarm) (s,g)
     [0.8199930172277934,8.635380746111755e-2,4.274564780384296e-2,4.274564780384296e-2,4.274564780384296e-2,7.331914679625428e-3,7.331914679625428e-3,7.331914679625428e-3,7.331914679625428e-3,1.497623382076038e-3,1.497623382076038e-3,1.497623382076038e-3,1.3584249637098452e-3,1.3584249637098452e-3,1.2008987821146627e-3]
 
 We see steady improvement, instead of stagnation. Well, actually you
