@@ -177,11 +177,29 @@ updateParticle (Particle p v bp) (Swarm ps b f pars i) g = (Particle p' v' bp', 
 -- Instances
 -- ===============
 
-{- 
-Declaration for pairs of fractionals e.g. (Double, Double), (Float,
-Float), (Rational, Rational), etc.
+{-
+Declarations for fractionals e.g Double, Rational
 -}
-instance (Fractional a, Eq a, Random a) => Random (a, a) where
+
+instance PSOVect Double where
+    pAdd x y = x + y
+    pScale r x = r * x
+    pZero = 0
+    pSubtract x y = x - y
+
+instance PSOVect Rational where
+    pAdd x y = x + y
+    pScale r x = toRational r * x
+    pZero = 0
+    pSubtract x y = x - y
+
+{- 
+Declaration for pairs of PSOVects e.g. (Double, Double), (Float,
+Float), (Rational, Rational), etc.
+
+Mathematically, this is the direct sum of vector spaces.
+-}
+instance (PSOVect a, PSOVect b, Random a, Random b) => Random (a, b) where
     random g = ((x, y), g'') where
         (x, g')  = random g
         (y, g'') = random g'
@@ -189,16 +207,18 @@ instance (Fractional a, Eq a, Random a) => Random (a, a) where
         (x, g')  = randomR (a1, a2) g
         (y, g'') = randomR (b1, b2) g'
 
-instance (Fractional a, Eq a) => PSOVect (a, a) where
-    pAdd (x1, y1) (x2, y2) = (x1 + x2, y1 + y2)
-    pScale r (x,y) = (realToFrac r * x, realToFrac r * y)
-    pZero = (0,0)
+instance (PSOVect a, PSOVect b) => PSOVect (a, b) where
+    pAdd (x1, y1) (x2, y2) = (pAdd x1 x2, pAdd y1 y2)
+    pScale r (x,y) = (pScale r x, pScale r y)
+    pZero = (pZero, pZero)
 
 {- 
 Declaration for triples of fractionals e.g. (Double, Double), (Float,
 Float), (Rational, Rational), etc.
+
+Mathematically, this is the direct sum of vector spaces.
 -}
-instance (Fractional a, Eq a, Random a) => Random (a, a, a) where
+instance (PSOVect a, PSOVect b, PSOVect c, Random a, Random b, Random c) => Random (a, b, c) where
     random g = ((x, y, z), g''') where
         (x, g')   = random g
         (y, g'')  = random g'
@@ -208,7 +228,7 @@ instance (Fractional a, Eq a, Random a) => Random (a, a, a) where
         (y, g'')  = randomR (b1, b2) g'
         (z, g''') = randomR (c1, c2) g''
 
-instance (Fractional a, Eq a) => PSOVect (a, a, a) where
-    pAdd (x1, y1, z1) (x2, y2, z2) = (x1 + x2, y1 + y2, z1 + z2)
-    pScale r (x,y,z) = (realToFrac r * x, realToFrac r * y, realToFrac r * z)
-    pZero = (0,0,0)
+instance (PSOVect a, PSOVect b, PSOVect c) => PSOVect (a, b, c) where
+    pAdd (x1, y1, z1) (x2, y2, z2) = (pAdd x1 x2, pAdd y1 y2, pAdd z1 z2)
+    pScale r (x,y,z) = (pScale r x, pScale r y, pScale r z)
+    pZero = (pZero,pZero,pZero)
