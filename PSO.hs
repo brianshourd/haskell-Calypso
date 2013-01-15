@@ -15,10 +15,21 @@ entry is also quite good:
 <http://en.wikipedia.org/wiki/Particle_swarm_optimization>
 -}
 
-module PSO (PSOVect(..), PSOCand(..), Particle(..), Swarm(..), PSOParams(..), randomSwarm, createSwarm, updateSwarm, iterateSwarm) where
-import System.Random
-import Data.List (foldl')
+module PSO 
+    (
+    PSOVect(..), 
+    PSOCand(..), 
+    Particle(..), 
+    Swarm(..), 
+    PSOParams(..), 
+    randomSwarm, 
+    createSwarm, 
+    updateSwarm, 
+    iterateSwarm
+    ) where
 import Data.Function (on)
+import Data.List (foldl', minimumBy)
+import System.Random
 
 {- | 
 Represents the position and velocity of a particle. 
@@ -59,8 +70,12 @@ Notice that the first 2 laws are the Monoid laws (mAppend = pAdd, mempty
 If these laws are satisfied, we can prove that the additive inverse of
 @v@ is @pScale (-1) v@, so we can automatically define @'pSubtract'@.
 However, you may provide a faster implementation if you wish.
+
+Random is a requirement of this typeclass, as well. Especially randomR,
+which should work on a component-by-component basis. See the examples
+for more information on how/why Random is required.
 -}
-class (Eq a) => PSOVect a where
+class (Random a) => PSOVect a where
     pAdd :: a -> a -> a
     pZero :: a
     pScale :: Double -> a -> a
@@ -77,15 +92,7 @@ In use, the type @a@ should belong to the @'PSOVect'@ class.
 data PSOCand a = PSOCand {
     pt :: a, 
     val :: Double
-    } deriving (Show, Eq)
-
-{- | 
-Better/worse @PSOCands@ are determined by their values. Need @Eq a@ in
-order to assure that @PSOCand@ a is an instance of @Eq@, of which @Ord@
-is a superclass
--}
-instance (Eq a) => Ord (PSOCand a) where
-    compare = compare `on` val
+    } deriving (Show)
 
 {- | 
 @Particles@ know their location, velocity, and the best location/value
@@ -98,15 +105,7 @@ data Particle a = Particle {
     pos :: a,       -- ^ position of particle
     vel :: a,       -- ^ velocity of particle
     pBest :: PSOCand a  -- ^ best position this particle has found
-    } deriving (Eq, Show)
-
-{- | 
-Compare points based on their best value.  Need @Eq a@ in order to
-assure that @Particle a@ is an instance of @Eq@, of which @Ord@ is a
-superclass
--}
-instance (Eq a) => Ord (Particle a) where
-    compare = compare `on` pBest
+    } deriving (Show)
 
 {- | 
 Holds the parameters used to update particle velocities, see 
@@ -180,7 +179,7 @@ createSwarm :: (PSOVect a)
     -> Swarm a
 createSwarm ps f pars = Swarm qs b f pars 0 where
     qs = map (createParticle f) ps
-    b = pBest . minimum $ qs
+    b = minimumBy (compare `on` val) $ map pBest qs
     createParticle f' p = Particle p pZero (PSOCand p (f' p))
 
 {- | 
@@ -193,9 +192,11 @@ Arguments ordered to allow @iterate (uncurry updateSwarm)@
 updateSwarm :: (PSOVect a, RandomGen b) => Swarm a -> b -> (Swarm a, b)
 updateSwarm s@(Swarm ps b f pars i) g = (Swarm qs b' f pars (i+1), g') where
     (qs, g', b') = foldl' helper ([], g, b) ps
-    helper (acc, gen, best) p = (p':acc, gen', min best (pBest p')) where
+    helper (acc, gen, best) p = (p':acc, gen', minBest) where
         (p',gen') = updateParticle p s gen
-
+        minBest = case compare (val best) (val $ pBest p') of
+            LT -> best
+            _  -> pBest p'
 {- |
 Update a swarm repeatedly. Absorbs a @RandomGen@.
 -}
@@ -221,7 +222,9 @@ updateParticle (Particle p v bp) (Swarm ps b f pars i) g = (Particle p' v' bp', 
     newVel (PSOParamsDynamic omega c1 c2) = pAdd (pScale (omega i) v) $ 
          pAdd (pScale (c1 i * r1) dp) $
          pScale (c2 i * r2) dg
-    bp' = min bp $ PSOCand p' (f p')
+    bp' = case compare (val bp) (f p') of
+        LT -> PSOCand p' (f p')
+        _  -> bp
 
 -- ===============
 -- Instances
@@ -232,16 +235,18 @@ Declarations for fractionals e.g Double, Rational
 -}
 
 instance PSOVect Double where
-    pAdd x y = x + y
-    pScale r x = r * x
+    pAdd = (+)
+    pScale = (*)
     pZero = 0
-    pSubtract x y = x - y
+    pSubtract = (-)
 
+{-
 instance PSOVect Rational where
-    pAdd x y = x + y
-    pScale r x = toRational r * x
+    pAdd = (+)
+    pScale r = (*) (toRational r)
     pZero = 0
-    pSubtract x y = x - y
+    pSubtract = (-)
+-}
 
 {- 
 Declaration for pairs of PSOVects e.g. (Double, Double), (Float,
@@ -282,12 +287,3 @@ instance (PSOVect a, PSOVect b, PSOVect c) => PSOVect (a, b, c) where
     pScale r (x,y,z) = (pScale r x, pScale r y, pScale r z)
     pZero = (pZero,pZero,pZero)
 
-{-
-Delaration for lists of PSOVects.
-
-Mathematically, this is just the direct sum of vector spaces.
--}
-instance (PSOVect a) => PSOVect [a] where
-    pAdd = zipWith pAdd
-    pScale r = map $ pScale r
-    pZero = repeat pZero
