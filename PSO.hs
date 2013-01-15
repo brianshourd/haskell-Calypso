@@ -211,17 +211,19 @@ that the particle belongs to as a parameter
 updateParticle :: (PSOVect a, RandomGen b) => Particle a -> Swarm a -> b -> (Particle a, b)
 updateParticle (Particle p v bp) (Swarm ps b f pars i) g = (Particle p' v' bp', g'') where
     p' = pAdd p v'
-    (r1, g') = randomR (0,1) g
-    (r2, g'') = randomR (0,1) g'
     dp = pSubtract (pt bp) p
+        -- ^ Difference between point and local best
     dg = pSubtract (pt b) p
+        -- ^ Difference between point and global best
+    (r1, g') = randomR (pZero,dp) g
+    (r2, g'') = randomR (pZero,dg) g'
     v' = newVel pars
     newVel (PSOParamsStatic omega c1 c2) = pAdd (pScale omega v) $ 
-         pAdd (pScale (c1 * r1) dp) $
-         pScale (c2 * r2) dg
+        pAdd (pScale c1 dp) $
+        (pScale c2 dg)
     newVel (PSOParamsDynamic omega c1 c2) = pAdd (pScale (omega i) v) $ 
-         pAdd (pScale (c1 i * r1) dp) $
-         pScale (c2 i * r2) dg
+         pAdd (pScale (c1 i) dp) $
+         pScale (c2 i) dg
     bp' = case compare (val bp) (f p') of
         LT -> PSOCand p' (f p')
         _  -> bp
