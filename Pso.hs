@@ -3,16 +3,19 @@
 
 {- | 
 A small module to perform optimization using Particle Swarm Optimization
-(PSO), based on the paper by James Kennedy and Russell Eberhart:
+(PSO), based on the so-called "Standard PSO" defined in
   
-Kennedy, James, and Russell Eberhart. \"Particle swarm
-optimization.\" /Neural Networks, 1995. Proceedings., IEEE/
-/International Conference on./ Vol. 4. IEEE, 1995.
-  
+Bratton, Daniel, and James Kennedy. "Defining a standard for particle
+swarm optimization." Swarm Intelligence Symposium, 2007. SIS 2007. IEEE.
+IEEE, 2007.
+ 
 I highly recommend that you find and read this paper (it's only 7
 pages) if you are interested in PSO at all. However, the wikipedia
 entry is also quite good:
 <http://en.wikipedia.org/wiki/Particle_swarm_optimization>
+Note that we are using a method with "constriction parameters", while
+the wikipedia article puts forward a method using "inertia weight". The
+two are similar, but not identical.
 -}
 
 module Pso 
@@ -116,28 +119,31 @@ data Particle a = Particle {
 {- | 
 Holds the parameters used to update particle velocities, see 
 
-Shi, Yuhui, and Russell Eberhart. \"Parameter selection in particle swarm
-optimization.\" /Evolutionary Programming VII./ Springer
-Berlin/Heidelberg, 1998.
+Bratton, Daniel, and James Kennedy. "Defining a standard for particle
+swarm optimization." Swarm Intelligence Symposium, 2007. SIS 2007. IEEE.
+IEEE, 2007.
+
+If in doubt, the paper suggests that the constriction parameter be given
+by the formula chi = 2 / abs(2 - phi - sqrt(phi^2 - 4 * phi)) where phi
+= c1 + c2 and phi > 4.
 -}
-data PsoParams = PsoParamsStatic
-    Double  -- inertia weight
-    Double  -- tendancy toward local
-    Double  -- tendancy toward global
-    | PsoParamsDynamic 
-    (Integer -> Double)  -- inertia weight
-    (Integer -> Double)  -- tendancy toward local
-    (Integer -> Double)  -- tendancy toward global
+data PsoParams = PsoParamsStandard
+    Double  -- Constriction parameter (chi)
+    Double  -- Tendancy toward local (c1)
+    Double  -- Tendancy toward global (c2)
 
 {- | 
-The original parameters given in the 1995 paper \"Particle Swarm
-Optimization\" by James Kennedy and Russell Eberhart
+The parameters suggested as a starting point in
+
+Bratton, Daniel, and James Kennedy. "Defining a standard for particle
+swarm optimization." Swarm Intelligence Symposium, 2007. SIS 2007. IEEE.
+IEEE, 2007.
 
 Normally, one should search for better parameters, since parameter
 choice dramatically influences algorithm performance.
 -}
 defaultPsoParams :: PsoParams
-defaultPsoParams = PsoParamsStatic 1 2 2
+defaultPsoParams = PsoParamsStandard 0.72984 2.05 2.05
 
 {- | 
 A @Swarm@ keeps track of all the particles in the swarm, the function
@@ -224,14 +230,12 @@ updateParticle (Particle p v bp) (Swarm ps b f pars i) g = (Particle p' v' bp', 
     (r1, g') = randomR (pZero,dp) g
     (r2, g'') = randomR (pZero,dg) g'
     v' = newVel pars
-    newVel (PsoParamsStatic omega c1 c2) = pAdd (pScale omega v) $ 
+    newVel (PsoParamsStandard chi c1 c2) = pScale chi $ 
+        pAdd v $ 
         pAdd (pScale c1 dp) $
         pScale c2 dg
-    newVel (PsoParamsDynamic omega c1 c2) = pAdd (pScale (omega i) v) $ 
-         pAdd (pScale (c1 i) dp) $
-         pScale (c2 i) dg
     bp' = case compare (val bp) (f p') of
-        LT -> PsoGuide p' (f p')
+        GT -> PsoGuide p' (f p')
         _  -> bp
 
 -- ===============
