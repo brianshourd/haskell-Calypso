@@ -28,7 +28,12 @@ module Pso
     randomSwarm, 
     createSwarm, 
     updateSwarm, 
-    iterateSwarm
+    iterateSwarm,
+    -- Analysis
+    center,
+    avgScore,
+    posVariance,
+    scoreVariance
     ) where
 import Data.Function (on)
 import Data.List (foldl', minimumBy)
@@ -160,7 +165,8 @@ data Swarm a = Swarm {
     iteration :: Integer    -- ^ current iteration
     }
 
-instance Show a => Show (Swarm a) where
+instance Show a => Show (Swarm a) 
+  where
     show (Swarm ps b _ _ _) = show ( map pGuide ps) ++ show b
 
 {- | 
@@ -174,10 +180,12 @@ randomSwarm :: (PsoVect a, Random a, RandomGen b)
     -> (a -> Double)    -- ^ Function to minimize
     -> PsoParams    -- ^ Parameters
     -> (Swarm a, b) -- ^ (Swarm returned, new seed)
-randomSwarm g n bounds f params = (createSwarm ps f params, g') where
+randomSwarm g n bounds f params = (createSwarm ps f params, g') 
+  where
     (ps, g') = getSomeRands n g []
     getSomeRands 0 gen acc = (acc,gen)
-    getSomeRands m gen acc = getSomeRands (m-1) gen' (next:acc) where
+    getSomeRands m gen acc = getSomeRands (m-1) gen' (next:acc) 
+      where
         (next, gen') = randomR bounds gen
 
 {- | 
@@ -189,7 +197,8 @@ createSwarm :: (PsoVect a)
     -> (a -> Double)    -- ^ Function to minimize
     -> PsoParams    -- ^ Parameters to use
     -> Swarm a
-createSwarm ps f pars = Swarm qs b f pars 0 where
+createSwarm ps f pars = Swarm qs b f pars 0 
+  where
     qs = map (createParticle f) ps
     b = minimumBy (compare `on` val) $ map pGuide qs
     createParticle f' p = Particle p pZero (PsoGuide p (f' p))
@@ -202,9 +211,11 @@ well as a new generator to use.
 Arguments ordered to allow @iterate (uncurry updateSwarm)@
 -}
 updateSwarm :: (PsoVect a, RandomGen b) => Swarm a -> b -> (Swarm a, b)
-updateSwarm s@(Swarm ps b f pars i) g = (Swarm qs b' f pars (i+1), g') where
+updateSwarm s@(Swarm ps b f pars i) g = (Swarm qs b' f pars (i+1), g') 
+  where
     (qs, g', b') = foldl' helper ([], g, b) ps
-    helper (acc, gen, best) p = (p':acc, gen', minBest) where
+    helper (acc, gen, best) p = (p':acc, gen', minBest) 
+      where
         (p',gen') = updateParticle p s gen
         minBest = case compare (val best) (val $ pGuide p') of
             LT -> best
@@ -221,7 +232,8 @@ Update a particle one step. Called by updateSwarm and requires the swarm
 that the particle belongs to as a parameter
 -}
 updateParticle :: (PsoVect a, RandomGen b) => Particle a -> Swarm a -> b -> (Particle a, b)
-updateParticle (Particle p v bp) (Swarm ps b f pars i) g = (Particle p' v' bp', g'') where
+updateParticle (Particle p v bp) (Swarm ps b f pars i) g = (Particle p' v' bp', g'') 
+  where
     p' = pAdd p v'
     dp = pSubtract (pt bp) p
         -- ^ Difference between point and local best
@@ -239,6 +251,51 @@ updateParticle (Particle p v bp) (Swarm ps b f pars i) g = (Particle p' v' bp', 
         _  -> bp
 
 -- ===============
+-- Analysis
+-- ===============
+
+class (PsoVect a) => PsoSized a where
+    pSqMag :: a -> Double
+
+{-
+The center of the swarm.
+-}
+center :: (PsoVect a) => Swarm a -> a
+center (Swarm ps _ _ _ _) = avg sumPoints
+  where
+    avg = pScale (1 / (fromIntegral $ length ps))
+    sumPoints = foldr pAdd pZero $ map pos ps
+
+{-
+Each point has a personal best, what is the average?
+-}
+avgScore :: (PsoVect a) => Swarm a -> Double
+avgScore (Swarm ps _ f _ _) = avg $ map (val . pGuide) ps
+  where
+    avg xs = (sum xs) / (fromIntegral $ length xs)
+
+{-
+Total variance of distance points are from the center of the swarm.
+Measures how close the swarm is to converging, and can be used to
+determine if a swarm has converged on a point or not.
+-}
+posVariance :: (PsoSized a) => Swarm a -> Double
+posVariance s@(Swarm ps _ _ _ _) = sum . map (pSqMag . pSubtract cen . pos) $ ps
+  where
+    cen = center s
+
+{-
+Total variance of the scores of the private guides. Measures how close
+the swarm is to converging upon a score, even if it cannot decide on a
+single best location for that score. Good if, say, your problem is
+multi-modal.
+-}
+scoreVariance :: (PsoVect a) => Swarm a -> Double
+scoreVariance s@(Swarm ps b f _ _) = sum . map ((^2) . (-) avg . val . pGuide) $ ps
+  where
+    avg = avgScore s
+
+-- ===============
 -- Instances
 -- ===============
 
@@ -251,6 +308,9 @@ instance PsoVect Double where
     pScale = (*)
     pZero = 0
     pSubtract = (-)
+
+instance PsoSized Double where
+    pSqMag = (^2)
 
 {-
 instance PsoVect Rational where
@@ -267,10 +327,12 @@ Float), (Rational, Rational), etc.
 Mathematically, this is the direct sum of vector spaces.
 -}
 instance (PsoVect a, PsoVect b, Random a, Random b) => Random (a, b) where
-    random g = ((x, y), g'') where
+    random g = ((x, y), g'') 
+      where
         (x, g')  = random g
         (y, g'') = random g'
-    randomR ((a1, b1), (a2, b2)) g = ((x, y), g'') where
+    randomR ((a1, b1), (a2, b2)) g = ((x, y), g'') 
+      where
         (x, g')  = randomR (a1, a2) g
         (y, g'') = randomR (b1, b2) g'
 
@@ -279,17 +341,22 @@ instance (PsoVect a, PsoVect b) => PsoVect (a, b) where
     pScale r (x,y) = (pScale r x, pScale r y)
     pZero = (pZero, pZero)
 
+instance (PsoSized a, PsoSized b) => PsoSized (a, b) where
+    pSqMag (x,y) = pSqMag x + pSqMag y
+
 {- 
 Declaration for triples of PsoVects
 
 Mathematically, this is the direct sum of vector spaces.
 -}
 instance (PsoVect a, PsoVect b, PsoVect c, Random a, Random b, Random c) => Random (a, b, c) where
-    random g = ((x, y, z), g''') where
+    random g = ((x, y, z), g''') 
+      where
         (x, g')   = random g
         (y, g'')  = random g'
         (z, g''') = random g''
-    randomR ((a1, b1, c1), (a2, b2, c2)) g = ((x, y, z), g''') where
+    randomR ((a1, b1, c1), (a2, b2, c2)) g = ((x, y, z), g''') 
+      where
         (x, g')   = randomR (a1, a2) g
         (y, g'')  = randomR (b1, b2) g'
         (z, g''') = randomR (c1, c2) g''
@@ -298,4 +365,7 @@ instance (PsoVect a, PsoVect b, PsoVect c) => PsoVect (a, b, c) where
     pAdd (x1, y1, z1) (x2, y2, z2) = (pAdd x1 x2, pAdd y1 y2, pAdd z1 z2)
     pScale r (x,y,z) = (pScale r x, pScale r y, pScale r z)
     pZero = (pZero,pZero,pZero)
+
+instance (PsoSized a, PsoSized b, PsoSized c) => PsoSized (a, b, c) where
+    pSqMag (x,y,z) = pSqMag x + pSqMag y + pSqMag z
 
