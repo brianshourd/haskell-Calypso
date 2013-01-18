@@ -20,20 +20,24 @@ two are similar, but not identical.
 
 module Pso 
     (
+    -- Typeclasses
     PsoVect(..), 
+    Grade(..),
+    -- Data Structures
     PsoGuide(..), 
     Particle(..), 
     Swarm(..), 
     PsoParams(..), 
+    -- Operations
     randomSwarm, 
     createSwarm, 
     updateSwarm, 
     iterateSwarm,
     -- Analysis
     center,
-    avgScore,
+--    avgScore,
     posVariance,
-    scoreVariance
+--    scoreVariance
     ) where
 import Data.Function (on)
 import Data.List (foldl', minimumBy)
@@ -91,6 +95,66 @@ class (Random a) => PsoVect a where
     pSubtract v1 v2 = pAdd v1 $ pScale (-1) v2
 
 {- |
+The function that you wish to optimize should be of the form @f ::
+(PsoVect a, Grade b) => a -> b@. That is, it should associate to each
+point a grade.
+
+Many different data structures could be considered grades. In
+particular, the types of @Double@ and @Maybe Double@, both of which are
+instanced below. In the case of @Double@, lower scores are better
+(including negative numbers) - this is the usual scoring system for PSO.
+
+In the @Maybe Double@ case, lower scores are better, but a score of
+@Nothing@ is worst of all. This is principally used to create grading 
+functions which look only within given bounds. For example, if we wish 
+to find the lowest value of @f x y = 2 * x + 3 * y - 4@ within the
+bounds @0 <= x <= 3@ and @0 <= y <= 4@, we would use as our grading
+function
+
+    g :: (Double, Double) -> Maybe Double
+    g p@(x,y) 
+        | and [0 <= x, x <= 2, 0 <= y, y <= 3] = Just $ 2 * x + 3 * y - 4
+        | otherwise                            = Nothing
+
+In practice, I don't think that anyone will need to instantiate this
+typeclass, since I've already made instances for what I think are the
+common situations. However, if you needed to, a minimal definition would
+include either @betterThan@ or @worseThan@.
+-}
+
+class Grade a where
+    betterThan :: a -> a -> Bool
+    x `betterThan` y = not $ x `worseThan` y
+    worseThan :: a -> a -> Bool
+    x `worseThan` y = not $ x `betterThan` y
+
+bestGrade :: (Grade a) => [a] -> a
+bestGrade (x:xs) = foldr go x xs
+  where
+    go y z
+        | y `betterThan` z = y
+        | otherwise        = z
+
+instance Grade Double where
+    betterThan = (<)
+
+instance Grade Int where
+    betterThan = (<)
+
+instance Grade Integer where
+    betterThan = (<)
+
+instance Grade Char where
+    betterThan = (<)
+
+-- In this case, it turns out that @Nothing@ is worse than @Nothing@,
+-- but that should matter little.
+instance (Grade a) => Grade (Maybe a) where
+    Nothing  `betterThan` _        = False
+    _        `betterThan` Nothing  = True
+    (Just x) `betterThan` (Just y) = x `betterThan` y
+
+{- |
 A guide for a particle. The term "guide" originates from (as far as I
 can tell) this paper on velocity adaptation.
 
@@ -101,24 +165,33 @@ Systems, 2009. ICAIS'09. International Conference on. IEEE, 2009.
 It stores both the location of the possible minimum, and the value of
 the function to minimize at that point.
 
-In use, the type @a@ should belong to the @'PsoVect'@ class.
+In use, the type @a@ should belong to the @'PsoVect'@ class and the type
+@b@ should belong to the @'Grade'@ class.
 -}
-data PsoGuide a = PsoGuide {
+data PsoGuide a b = PsoGuide {
     pt :: a, 
-    val :: Double
+    val :: b
     } deriving (Show)
+
+bestGuide :: (Grade b) => [PsoGuide a b] -> PsoGuide a b
+bestGuide (x:xs) = foldr go x xs
+  where
+    go y@(PsoGuide _ valy) z@(PsoGuide _ valz)
+        | valy `betterThan` valz = y
+        | otherwise              = z
 
 {- | 
 @Particles@ know their location, velocity, and the best location/value
 they've visited. Individual @Particles@ do not know the global minimum,
 but the @Swarm@ they belong to does
 
-In use, the type @a@ should belong to the @'PsoVect'@ class.
+In use, the type @a@ should belong to the @'PsoVect'@ class and the type
+@b@ should belong to the @'Grade'@ class.
 -}
-data Particle a = Particle {
-    pos :: a,       -- ^ position of particle
-    vel :: a,       -- ^ velocity of particle
-    pGuide :: PsoGuide a  -- ^ private guide
+data Particle a b = Particle {
+    pos    :: a,            -- ^ Position of particle
+    vel    :: a,            -- ^ Velocity of particle
+    pGuide :: PsoGuide a b  -- ^ Private guide
     } deriving (Show)
 
 {- | 
@@ -155,17 +228,18 @@ A @Swarm@ keeps track of all the particles in the swarm, the function
 that the swarm seeks to minimize, the parameters, the current iteration
 (for parameters), and the best location/value found so far
 
-In use, the type @a@ should belong to the @'PsoVect'@ class.
+In use, the type @a@ should belong to the @'PsoVect'@ class and the type
+@b@ should belong to the @'Grade'@ class.
 -}
-data Swarm a = Swarm {
-    parts :: [Particle a],  -- ^ particles in the swarm
-    gGuide :: PsoGuide a,   -- ^ global guide
-    func :: a -> Double,    -- ^ funtion to minimize
-    params :: PsoParams,    -- ^ parameters
-    iteration :: Integer    -- ^ current iteration
+data Swarm a b = Swarm {
+    parts     :: [Particle a b],  -- ^ Particles in the swarm
+    gGuide    :: PsoGuide a b,    -- ^ Global guide
+    func      :: a -> b,          -- ^ Function to minimize
+    params    :: PsoParams,       -- ^ Parameters
+    iteration :: Integer          -- ^ Current iteration
     }
 
-instance Show a => Show (Swarm a) 
+instance (Show a, Show b) => Show (Swarm a b) 
   where
     show (Swarm ps b _ _ _) = show ( map pGuide ps) ++ show b
 
@@ -173,13 +247,13 @@ instance Show a => Show (Swarm a)
 Create a swarm by randomly generating n points within the bounds, making
 all the particles start at these points with velocity zero.
 -}
-randomSwarm :: (PsoVect a, Random a, RandomGen b) 
-    => b        -- ^ A random seed
+randomSwarm :: (PsoVect a, Random a, Grade b, RandomGen c) 
+    => c        -- ^ A random seed
     -> Int      -- ^ Number of particles
     -> (a,a)    -- ^ Bounds to create particles in
-    -> (a -> Double)    -- ^ Function to minimize
-    -> PsoParams    -- ^ Parameters
-    -> (Swarm a, b) -- ^ (Swarm returned, new seed)
+    -> (a -> b)        -- ^ Function to minimize
+    -> PsoParams       -- ^ Parameters
+    -> (Swarm a b, c)  -- ^ (Swarm returned, new seed)
 randomSwarm g n bounds f params = (createSwarm ps f params, g') 
   where
     (ps, g') = getSomeRands n g []
@@ -192,15 +266,15 @@ randomSwarm g n bounds f params = (createSwarm ps f params, g')
 Create a swarm in initial state based on the positions of the particles.
 Initial velocities are all zero.
 -}
-createSwarm :: (PsoVect a) 
-    => [a]          -- ^ Positions of of particles
-    -> (a -> Double)    -- ^ Function to minimize
-    -> PsoParams    -- ^ Parameters to use
-    -> Swarm a
+createSwarm :: (PsoVect a, Grade b)
+    => [a]        -- ^ Positions of of particles
+    -> (a -> b)   -- ^ Function to minimize
+    -> PsoParams  -- ^ Parameters to use
+    -> Swarm a b
 createSwarm ps f pars = Swarm qs b f pars 0 
   where
     qs = map (createParticle f) ps
-    b = minimumBy (compare `on` val) $ map pGuide qs
+    b = bestGuide $ map (pGuide) qs
     createParticle f' p = Particle p pZero (PsoGuide p (f' p))
 
 {- | 
@@ -210,28 +284,28 @@ well as a new generator to use.
 
 Arguments ordered to allow @iterate (uncurry updateSwarm)@
 -}
-updateSwarm :: (PsoVect a, RandomGen b) => Swarm a -> b -> (Swarm a, b)
+updateSwarm :: (PsoVect a, Grade b, RandomGen c) => Swarm a b -> c -> (Swarm a b, c)
 updateSwarm s@(Swarm ps b f pars i) g = (Swarm qs b' f pars (i+1), g') 
   where
     (qs, g', b') = foldl' helper ([], g, b) ps
     helper (acc, gen, best) p = (p':acc, gen', minBest) 
       where
         (p',gen') = updateParticle p s gen
-        minBest = case compare (val best) (val $ pGuide p') of
-            LT -> best
-            _  -> pGuide p'
+        minBest = case (val best) `betterThan` (val $ pGuide p') of
+            True -> best
+            _    -> pGuide p'
 {- |
 Update a swarm repeatedly. Absorbs a @RandomGen@.
 -}
 
-iterateSwarm :: (PsoVect a, RandomGen b) => Swarm a -> b -> [Swarm a]
+iterateSwarm :: (PsoVect a, Grade b, RandomGen c) => Swarm a b -> c -> [Swarm a b]
 iterateSwarm s g = map fst $ iterate (uncurry updateSwarm) (s,g)
 
 {- | 
 Update a particle one step. Called by updateSwarm and requires the swarm
 that the particle belongs to as a parameter
 -}
-updateParticle :: (PsoVect a, RandomGen b) => Particle a -> Swarm a -> b -> (Particle a, b)
+updateParticle :: (PsoVect a, Grade b, RandomGen c) => Particle a b -> Swarm a b -> c -> (Particle a b, c)
 updateParticle (Particle p v bp) (Swarm ps b f pars i) g = (Particle p' v' bp', g'') 
   where
     p' = pAdd p v'
@@ -246,9 +320,9 @@ updateParticle (Particle p v bp) (Swarm ps b f pars i) g = (Particle p' v' bp', 
         pAdd v $ 
         pAdd (pScale c1 dp) $
         pScale c2 dg
-    bp' = case compare (val bp) (f p') of
-        GT -> PsoGuide p' (f p')
-        _  -> bp
+    bp' = case (val bp) `betterThan` (f p') of
+        False  -> PsoGuide p' (f p')
+        _      -> bp
 
 -- ===============
 -- Analysis
@@ -260,7 +334,7 @@ class (PsoVect a) => PsoSized a where
 {-
 The center of the swarm.
 -}
-center :: (PsoVect a) => Swarm a -> a
+center :: (PsoVect a) => Swarm a b -> a
 center (Swarm ps _ _ _ _) = avg sumPoints
   where
     avg = pScale (1 / (fromIntegral $ length ps))
@@ -269,17 +343,19 @@ center (Swarm ps _ _ _ _) = avg sumPoints
 {-
 Each point has a personal best, what is the average?
 -}
+{-
 avgScore :: (PsoVect a) => Swarm a -> Double
 avgScore (Swarm ps _ f _ _) = avg $ map (val . pGuide) ps
   where
     avg xs = (sum xs) / (fromIntegral $ length xs)
+-}
 
 {-
 Total variance of distance points are from the center of the swarm.
 Measures how close the swarm is to converging, and can be used to
 determine if a swarm has converged on a point or not.
 -}
-posVariance :: (PsoSized a) => Swarm a -> Double
+posVariance :: (PsoSized a) => Swarm a b -> Double
 posVariance s@(Swarm ps _ _ _ _) = sum . map (pSqMag . pSubtract cen . pos) $ ps
   where
     cen = center s
@@ -290,10 +366,12 @@ the swarm is to converging upon a score, even if it cannot decide on a
 single best location for that score. Good if, say, your problem is
 multi-modal.
 -}
+{-
 scoreVariance :: (PsoVect a) => Swarm a -> Double
 scoreVariance s@(Swarm ps b f _ _) = sum . map ((^2) . (-) avg . val . pGuide) $ ps
   where
     avg = avgScore s
+-}
 
 -- ===============
 -- Instances
