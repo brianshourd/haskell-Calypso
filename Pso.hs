@@ -20,20 +20,36 @@ two are similar, but not identical.
 
 module Pso 
     (
-    -- Typeclasses
+    -- * Typeclasses
     PsoVect(..), 
     Grade(..),
-    -- Data Structures
+    -- * Data Structures
     PsoGuide(..), 
     Particle(..), 
     Swarm(..), 
-    PsoParams(..), 
-    -- Operations
+    -- * Updaters
+    Updater(..),
+    -- ** Useable
+    upDefault,
+    upStandard,
+    upOriginal,
+    upInertiaWeight,
+    upInertiaWeightDynamic,
+    -- ** Building Blocks
+    upAddLocal,
+    upAddLocalDynamic,
+    upAddPrivate,
+    upAddPrivateDynamic,
+    upScale,
+    upScaleDynamic,
+    upVMax,
+    upVMaxDynamic,
+    -- * Swarm Operations
     randomSwarm, 
     createSwarm, 
     updateSwarm, 
     iterateSwarm,
-    -- Analysis
+    -- * Analysis
     center,
 --    avgScore,
     posVariance,
@@ -41,6 +57,7 @@ module Pso
     ) where
 import Data.Function (on)
 import Data.List (foldl', minimumBy)
+import Data.Monoid
 import System.Random
 
 {- | 
@@ -87,7 +104,8 @@ Random is a requirement of this typeclass, as well. Especially randomR,
 which should work on a component-by-component basis. See the examples
 for more information on how/why Random is required.
 -}
-class (Random a) => PsoVect a where
+class (Random a) => PsoVect a 
+  where
     pAdd :: a -> a -> a
     pZero :: a
     pScale :: Double -> a -> a
@@ -122,7 +140,8 @@ common situations. However, if you needed to, a minimal definition would
 include either @betterThan@ or @worseThan@.
 -}
 
-class Grade a where
+class Grade a 
+  where
     betterThan :: a -> a -> Bool
     x `betterThan` y = not $ x `worseThan` y
     worseThan :: a -> a -> Bool
@@ -135,21 +154,26 @@ bestGrade (x:xs) = foldr go x xs
         | y `betterThan` z = y
         | otherwise        = z
 
-instance Grade Double where
+instance Grade Double 
+  where
     betterThan = (<)
 
-instance Grade Int where
+instance Grade Int 
+  where
     betterThan = (<)
 
-instance Grade Integer where
+instance Grade Integer 
+  where
     betterThan = (<)
 
-instance Grade Char where
+instance Grade Char 
+  where
     betterThan = (<)
 
 -- In this case, it turns out that @Nothing@ is worse than @Nothing@,
 -- but that should matter little.
-instance (Grade a) => Grade (Maybe a) where
+instance (Grade a) => Grade (Maybe a) 
+  where
     Nothing  `betterThan` _        = False
     _        `betterThan` Nothing  = True
     (Just x) `betterThan` (Just y) = x `betterThan` y
@@ -194,8 +218,82 @@ data Particle a b = Particle {
     pGuide :: PsoGuide a b  -- ^ Private guide
     } deriving (Show)
 
-{- | 
-Holds the parameters used to update particle velocities, see 
+{- |
+Updater is the function which takes as arguments:
+
+1. A @StdGen@, to do any necessary random calculations
+2. A @Particle a b@, from which it can get position, velocity, and th
+    private guide
+3. A @PsoGuide a b@, the local guide for the particle
+4. An @Int@, the current iteration of the swarm. Useful for parameters
+    that adjust over time
+
+It returns the new velocity of the particle.
+
+Normally, updaters are not created through this constructor, but through
+one of the @updater*@ functions (e.g. @'updaterStandard'@,
+@'updaterOriginal'@, etc.)
+-}
+data Updater a b = Updater {
+    newVel :: StdGen -> Particle a b -> PsoGuide a b -> Integer -> (a, StdGen)
+    }
+
+instance (PsoVect a, Grade b) => Monoid (Updater a b)
+  where
+    mempty = Updater (\g (Particle _ v _) _ _ -> (v, g))
+    mappend (Updater f) (Updater g) = Updater h
+      where
+        h gen part@(Particle p v pg) lg i = f gen' (Particle p v' pg) lg i
+          where
+            (v', gen') = g gen part lg i
+
+{- |
+The following Updaters are simple building blocks for building more
+complex Updaters.
+-}
+upAddLocal :: (PsoVect a, Grade b) => Double -> Updater a b
+upAddLocal c = upAddLocalDynamic $ const c
+
+upAddLocalDynamic :: (PsoVect a, Grade b) => (Integer -> Double) -> Updater a b
+upAddLocalDynamic c = Updater f
+  where
+    f gen (Particle p v _) (PsoGuide lg _) i = (v', gen')
+      where
+        v' = pAdd v $ pScale (c i) dl
+        (dl, gen') = randomR (pZero, pSubtract lg p) gen
+
+upAddPrivate :: (PsoVect a, Grade b) => Double -> Updater a b
+upAddPrivate c = upAddPrivateDynamic $ const c
+
+upAddPrivateDynamic :: (PsoVect a, Grade b) => (Integer -> Double) -> Updater a b
+upAddPrivateDynamic c = Updater f
+  where
+    f gen (Particle p v (PsoGuide pg _)) _ i = (v', gen')
+      where
+        v' = pAdd v $ pScale (c i) dp
+        (dp, gen') = randomR (pZero,  pSubtract pg p) gen
+
+upScale :: (PsoVect a, Grade b) => Double -> Updater a b
+upScale c = upScaleDynamic $ const c
+
+upScaleDynamic :: (PsoVect a, Grade b) => (Integer -> Double) -> Updater a b
+upScaleDynamic c = Updater f
+  where
+    f gen (Particle _ v _) _ i = (pScale (c i) v, gen)
+
+upVMax :: (PsoSized a, Grade b) => a -> Updater a b
+upVMax max = upVMaxDynamic $ const max
+
+upVMaxDynamic :: (PsoSized a, Grade b) => (Integer -> a) -> Updater a b
+upVMaxDynamic max = Updater f
+  where
+    f gen (Particle _ v _) _ i = case (compare `on` pSqMag) v (max i) of
+        GT -> (max i, gen)
+        _  -> (v, gen)
+
+{- |
+Create an @'Updater'@ using the so-called "standard PSO" parameters,
+given in
 
 Bratton, Daniel, and James Kennedy. "Defining a standard for particle
 swarm optimization." Swarm Intelligence Symposium, 2007. SIS 2007. IEEE.
@@ -205,13 +303,15 @@ If in doubt, the paper suggests that the constriction parameter be given
 by the formula chi = 2 / abs(2 - phi - sqrt(phi^2 - 4 * phi)) where phi
 = c1 + c2 and phi > 4.
 -}
-data PsoParams = PsoParamsStandard
-    Double  -- Constriction parameter (chi)
-    Double  -- Tendancy toward local (c1)
-    Double  -- Tendancy toward global (c2)
+upStandard :: (PsoVect a, Grade b)
+    => Double  -- ^ Constriction parameter (chi)
+    -> Double  -- ^ Tendancy toward private guide (c1)
+    -> Double  -- ^ Tendancy toward local guide (c2)
+    -> Updater a b
+upStandard chi c1 c2 = (upScale chi) `mappend` (upAddLocal c2) `mappend` (upAddPrivate c1)
 
-{- | 
-The parameters suggested as a starting point in
+{- |
+The updater with parameters suggested as a starting point in
 
 Bratton, Daniel, and James Kennedy. "Defining a standard for particle
 swarm optimization." Swarm Intelligence Symposium, 2007. SIS 2007. IEEE.
@@ -220,13 +320,58 @@ IEEE, 2007.
 Normally, one should search for better parameters, since parameter
 choice dramatically influences algorithm performance.
 -}
-defaultPsoParams :: PsoParams
-defaultPsoParams = PsoParamsStandard 0.72984 2.05 2.05
+upDefault :: (PsoVect a, Grade b) => Updater a b
+upDefault = upStandard 0.72984 2.05 2.05
+
+{- |
+The original updater function, defined in
+
+Kennedy, James, and Russell Eberhart. "Particle swarm optimization."
+Neural Networks, 1995. Proceedings., IEEE International Conference on.
+Vol. 4. IEEE, 1995.
+
+This is (in the words of James Kennedy) obsolete now. However, it is still convenient for e.g. testing new versions of updaters. Plus, it's historical.
+-}
+upOriginal ::(PsoVect a, Grade b)
+    => Double  -- ^ Tendancy toward private guide (c1)
+    -> Double  -- ^ Tendancy toward local guide (c2)
+    -> Updater a b
+upOriginal c1 c2 = (upAddLocal c2) `mappend` (upAddPrivate c1)
+
+{- |
+An updater using a constant inertia weight factor, as can be found in
+
+Shi, Yuhui, and Russell Eberhart. "Parameter selection in particle swarm
+optimization." Evolutionary Programming VII. Springer Berlin/Heidelberg,
+1998.
+-}
+
+upInertiaWeight :: (PsoVect a, Grade b)
+    => Double  -- ^ Inertia weight (omega)
+    -> Double  -- ^ Tendancy toward private guide (c1)
+    -> Double  -- ^ Tendancy toward local guide (c2)
+    -> Updater a b
+upInertiaWeight omega c1 c2 = (upAddLocal c2) `mappend` (upAddPrivate c1) `mappend` (upScale omega)
+
+{- |
+An updater using a dynamic inertia weight factor, as can be found in
+
+Shi, Yuhui, and Russell Eberhart. "Parameter selection in particle swarm
+optimization." Evolutionary Programming VII. Springer Berlin/Heidelberg,
+1998.
+-}
+
+upInertiaWeightDynamic :: (PsoVect a, Grade b)
+    => (Integer -> Double)  -- ^ Inertia weight (omega)
+    -> Double               -- ^ Tendancy toward private guide (c1)
+    -> Double               -- ^ Tendancy toward local guide (c2)
+    -> Updater a b
+upInertiaWeightDynamic omega c1 c2 = (upAddLocal c2) `mappend` (upAddPrivate c1) `mappend` (upScaleDynamic omega)
 
 {- | 
 A @Swarm@ keeps track of all the particles in the swarm, the function
-that the swarm seeks to minimize, the parameters, the current iteration
-(for parameters), and the best location/value found so far
+that the swarm seeks to minimize, the updater, the current iteration
+(for dynamic updaters), and the best location/value found so far
 
 In use, the type @a@ should belong to the @'PsoVect'@ class and the type
 @b@ should belong to the @'Grade'@ class.
@@ -235,7 +380,7 @@ data Swarm a b = Swarm {
     parts     :: [Particle a b],  -- ^ Particles in the swarm
     gGuide    :: PsoGuide a b,    -- ^ Global guide
     func      :: a -> b,          -- ^ Function to minimize
-    params    :: PsoParams,       -- ^ Parameters
+    updater   :: Updater a b,     -- ^ Updater
     iteration :: Integer          -- ^ Current iteration
     }
 
@@ -247,14 +392,14 @@ instance (Show a, Show b) => Show (Swarm a b)
 Create a swarm by randomly generating n points within the bounds, making
 all the particles start at these points with velocity zero.
 -}
-randomSwarm :: (PsoVect a, Random a, Grade b, RandomGen c) 
-    => c        -- ^ A random seed
+randomSwarm :: (PsoVect a, Random a, Grade b) 
+    => StdGen   -- ^ A random seed
     -> Int      -- ^ Number of particles
     -> (a,a)    -- ^ Bounds to create particles in
-    -> (a -> b)        -- ^ Function to minimize
-    -> PsoParams       -- ^ Parameters
-    -> (Swarm a b, c)  -- ^ (Swarm returned, new seed)
-randomSwarm g n bounds f params = (createSwarm ps f params, g') 
+    -> (a -> b)             -- ^ Function to minimize
+    -> Updater a b          -- ^ Updater
+    -> (Swarm a b, StdGen)  -- ^ (Swarm returned, new seed)
+randomSwarm g n bounds f up = (createSwarm ps f up, g') 
   where
     (ps, g') = getSomeRands n g []
     getSomeRands 0 gen acc = (acc,gen)
@@ -267,11 +412,11 @@ Create a swarm in initial state based on the positions of the particles.
 Initial velocities are all zero.
 -}
 createSwarm :: (PsoVect a, Grade b)
-    => [a]        -- ^ Positions of of particles
-    -> (a -> b)   -- ^ Function to minimize
-    -> PsoParams  -- ^ Parameters to use
+    => [a]          -- ^ Positions of of particles
+    -> (a -> b)     -- ^ Function to minimize
+    -> Updater a b  -- ^ Updater to use
     -> Swarm a b
-createSwarm ps f pars = Swarm qs b f pars 0 
+createSwarm ps f up = Swarm qs b f up 0 
   where
     qs = map (createParticle f) ps
     b = bestGuide $ map (pGuide) qs
@@ -284,8 +429,8 @@ well as a new generator to use.
 
 Arguments ordered to allow @iterate (uncurry updateSwarm)@
 -}
-updateSwarm :: (PsoVect a, Grade b, RandomGen c) => Swarm a b -> c -> (Swarm a b, c)
-updateSwarm s@(Swarm ps b f pars i) g = (Swarm qs b' f pars (i+1), g') 
+updateSwarm :: (PsoVect a, Grade b) => Swarm a b -> StdGen -> (Swarm a b, StdGen)
+updateSwarm s@(Swarm ps b f up i) g = (Swarm qs b' f up (i+1), g') 
   where
     (qs, g', b') = foldl' helper ([], g, b) ps
     helper (acc, gen, best) p = (p':acc, gen', minBest) 
@@ -295,40 +440,45 @@ updateSwarm s@(Swarm ps b f pars i) g = (Swarm qs b' f pars (i+1), g')
             True -> best
             _    -> pGuide p'
 {- |
-Update a swarm repeatedly. Absorbs a @RandomGen@.
+Update a swarm repeatedly. Absorbs a @StdGen@.
 -}
 
-iterateSwarm :: (PsoVect a, Grade b, RandomGen c) => Swarm a b -> c -> [Swarm a b]
+iterateSwarm :: (PsoVect a, Grade b) => Swarm a b -> StdGen -> [Swarm a b]
 iterateSwarm s g = map fst $ iterate (uncurry updateSwarm) (s,g)
 
 {- | 
 Update a particle one step. Called by updateSwarm and requires the swarm
 that the particle belongs to as a parameter
 -}
-updateParticle :: (PsoVect a, Grade b, RandomGen c) => Particle a b -> Swarm a b -> c -> (Particle a b, c)
-updateParticle (Particle p v bp) (Swarm ps b f pars i) g = (Particle p' v' bp', g'') 
+updateParticle :: (PsoVect a, Grade b) => Particle a b -> Swarm a b -> StdGen -> (Particle a b, StdGen)
+updateParticle part@(Particle p v pg) (Swarm ps lg f up i) g = (Particle p' v' pg', g') 
   where
     p' = pAdd p v'
+    {-
     dp = pSubtract (pt bp) p
-        -- ^ Difference between point and local best
+        -- ^ Difference between point and private guide best
     dg = pSubtract (pt b) p
-        -- ^ Difference between point and global best
+        -- ^ Difference between point and local guide best
     (r1, g') = randomR (pZero,dp) g
     (r2, g'') = randomR (pZero,dg) g'
-    v' = newVel pars
-    newVel (PsoParamsStandard chi c1 c2) = pScale chi $ 
+    -}
+    (v',g') = (newVel up) g part lg i
+    {-
+    newVel (Updater f) = pScale chi $ 
         pAdd v $ 
         pAdd (pScale c1 dp) $
         pScale c2 dg
-    bp' = case (val bp) `betterThan` (f p') of
+    -}
+    pg' = case (val pg) `betterThan` (f p') of
         False  -> PsoGuide p' (f p')
-        _      -> bp
+        _      -> pg
 
 -- ===============
 -- Analysis
 -- ===============
 
-class (PsoVect a) => PsoSized a where
+class (PsoVect a) => PsoSized a 
+  where
     pSqMag :: a -> Double
 
 {-
@@ -381,17 +531,20 @@ scoreVariance s@(Swarm ps b f _ _) = sum . map ((^2) . (-) avg . val . pGuide) $
 Declarations for fractionals e.g Double, Rational
 -}
 
-instance PsoVect Double where
+instance PsoVect Double 
+  where
     pAdd = (+)
     pScale = (*)
     pZero = 0
     pSubtract = (-)
 
-instance PsoSized Double where
+instance PsoSized Double 
+  where
     pSqMag = (^2)
 
 {-
-instance PsoVect Rational where
+instance PsoVect Rational 
+  where
     pAdd = (+)
     pScale r = (*) (toRational r)
     pZero = 0
@@ -404,7 +557,8 @@ Float), (Rational, Rational), etc.
 
 Mathematically, this is the direct sum of vector spaces.
 -}
-instance (PsoVect a, PsoVect b, Random a, Random b) => Random (a, b) where
+instance (PsoVect a, PsoVect b, Random a, Random b) => Random (a, b) 
+  where
     random g = ((x, y), g'') 
       where
         (x, g')  = random g
@@ -414,12 +568,14 @@ instance (PsoVect a, PsoVect b, Random a, Random b) => Random (a, b) where
         (x, g')  = randomR (a1, a2) g
         (y, g'') = randomR (b1, b2) g'
 
-instance (PsoVect a, PsoVect b) => PsoVect (a, b) where
+instance (PsoVect a, PsoVect b) => PsoVect (a, b) 
+  where
     pAdd (x1, y1) (x2, y2) = (pAdd x1 x2, pAdd y1 y2)
     pScale r (x,y) = (pScale r x, pScale r y)
     pZero = (pZero, pZero)
 
-instance (PsoSized a, PsoSized b) => PsoSized (a, b) where
+instance (PsoSized a, PsoSized b) => PsoSized (a, b) 
+  where
     pSqMag (x,y) = pSqMag x + pSqMag y
 
 {- 
@@ -427,7 +583,8 @@ Declaration for triples of PsoVects
 
 Mathematically, this is the direct sum of vector spaces.
 -}
-instance (PsoVect a, PsoVect b, PsoVect c, Random a, Random b, Random c) => Random (a, b, c) where
+instance (PsoVect a, PsoVect b, PsoVect c, Random a, Random b, Random c) => Random (a, b, c) 
+  where
     random g = ((x, y, z), g''') 
       where
         (x, g')   = random g
@@ -439,11 +596,13 @@ instance (PsoVect a, PsoVect b, PsoVect c, Random a, Random b, Random c) => Rand
         (y, g'')  = randomR (b1, b2) g'
         (z, g''') = randomR (c1, c2) g''
 
-instance (PsoVect a, PsoVect b, PsoVect c) => PsoVect (a, b, c) where
+instance (PsoVect a, PsoVect b, PsoVect c) => PsoVect (a, b, c) 
+  where
     pAdd (x1, y1, z1) (x2, y2, z2) = (pAdd x1 x2, pAdd y1 y2, pAdd z1 z2)
     pScale r (x,y,z) = (pScale r x, pScale r y, pScale r z)
     pZero = (pZero,pZero,pZero)
 
-instance (PsoSized a, PsoSized b, PsoSized c) => PsoSized (a, b, c) where
+instance (PsoSized a, PsoSized b, PsoSized c) => PsoSized (a, b, c) 
+  where
     pSqMag (x,y,z) = pSqMag x + pSqMag y + pSqMag z
 
