@@ -3,39 +3,38 @@
 
 {- | 
 A small module to perform optimization using Particle Swarm Optimization
-(PSO), based on the so-called "Standard PSO" defined in
+(PSO), based on the so-called /Standard PSO/ defined in
   
-Bratton, Daniel, and James Kennedy. "Defining a standard for particle
-swarm optimization." Swarm Intelligence Symposium, 2007. SIS 2007. IEEE.
+Bratton, Daniel, and James Kennedy. \"Defining a standard for particle
+swarm optimization.\" Swarm Intelligence Symposium, 2007. SIS 2007. IEEE.
 IEEE, 2007.
  
-I highly recommend that you find and read this paper (it's only 7
-pages) if you are interested in PSO at all. However, the wikipedia
-entry is also quite good:
-<http://en.wikipedia.org/wiki/Particle_swarm_optimization>
-Note that we are using a method with "constriction parameters", while
-the wikipedia article puts forward a method using "inertia weight". The
+I highly recommend that you find and read this paper if you are
+interested in PSO at all. However, the wikipedia entry is also quite
+good: <http://en.wikipedia.org/wiki/Particle_swarm_optimization>
+Note that we are using a method with /constriction parameters/, while
+the wikipedia article puts forward a method using /inertia weight/. The
 two are similar, but not identical.
 -}
 
 module Pso 
     (
-    -- * Typeclasses
+    -- * Main Classes
+    -- $typeclasses
     PsoVect(..), 
     Grade(..),
-    -- * Data Structures
-    PsoGuide(..), 
-    Particle(..), 
-    Swarm(..), 
+    PsoSized(..),
     -- * Updaters
     Updater(..),
-    -- ** Useable
+    -- ** Common Updaters
+    -- $updaters
     upDefault,
     upStandard,
     upOriginal,
     upInertiaWeight,
     upInertiaWeightDynamic,
     -- ** Building Blocks
+    -- $buildingUpdaters
     upAddLocal,
     upAddLocalDynamic,
     upAddPrivate,
@@ -49,6 +48,10 @@ module Pso
     createSwarm, 
     updateSwarm, 
     iterateSwarm,
+    -- * Data Structures
+    PsoGuide(..), 
+    Particle(..), 
+    Swarm(..), 
     -- * Analysis
     center,
 --    avgScore,
@@ -59,6 +62,24 @@ import Data.Function (on)
 import Data.List (foldl', minimumBy)
 import Data.Monoid
 import System.Random
+
+{- $typeclasses
+In general, to use this library, you will be optimizing a function @f ::
+a -> b@. This library will work so long as
+
+1. @a@ is a member of the @'PsoVect'@ type class, and
+2. @b@ is a member of the @'Grade'@ type class.
+
+Ex. You want to minimize the function @f (x,y) = x^2 + y^2@. Then @f@
+has type @f :: (Double, Double) -> Double@, where lower scores are
+better. Then you need to make sure that @(Double, Double)@ is an
+instance of @PsoVect@ and that @Double@ is an instance of @Grade@ (with
+@'betterThan'@ given by @(<)@). Good news - these are already included,
+so you don't need to create these instances yourself.
+
+For more examples, see the examples included with the code (which should
+be available at <https://github.com/brianshourd/haskell-PSO>).
+-}
 
 {- | 
 Represents the position and velocity of a particle. 
@@ -130,7 +151,7 @@ bounds @0 <= x <= 3@ and @0 <= y <= 4@, we would use as our grading
 function
 
     g :: (Double, Double) -> Maybe Double
-    g p@(x,y) 
+    g p\@(x,y) 
         | and [0 <= x, x <= 2, 0 <= y, y <= 3] = Just $ 2 * x + 3 * y - 4
         | otherwise                            = Nothing
 
@@ -147,6 +168,8 @@ class Grade a
     worseThan :: a -> a -> Bool
     x `worseThan` y = not $ x `betterThan` y
 
+-- Convenience function to determine the best grade from a list of
+-- grades
 bestGrade :: (Grade a) => [a] -> a
 bestGrade (x:xs) = foldr go x xs
   where
@@ -154,36 +177,44 @@ bestGrade (x:xs) = foldr go x xs
         | y `betterThan` z = y
         | otherwise        = z
 
-instance Grade Double 
-  where
-    betterThan = (<)
+{- |
+If @PsoVect@ means /real vector space/, then @PsoSized@ means /real
+inner product space/
+(<http://en.wikipedia.org/wiki/Inner_product_space>).  In particular, we
+should satisfy the following three axioms:
 
-instance Grade Int 
-  where
-    betterThan = (<)
+1. @x `dot` y == y `dot` x@ for all @x@ and @y@ (symmetric).
+2. @(x `pAdd` (a `pScale` z)) `dot` y == (x `dot` y) + a * (z `dot y)@
+    for all @x@, @y@, @z@, and @a@ (linear in the first argument).
+3. @x `dot` x >= 0@ for all @x@, with equality if and only if @x ==
+    pZero@ (positive-definite).
 
-instance Grade Integer 
-  where
-    betterThan = (<)
+In practice, a @PsoVect@ is just an ordered collection of real numbers,
+and we can define `dot` analagously to:
 
-instance Grade Char 
-  where
-    betterThan = (<)
+    dot :: (Double, Double) -> (Double, Double) -> Double
+    (x1, y1) `dot` (x2, y2) = x1 * x2 + y1 * y2
 
--- In this case, it turns out that @Nothing@ is worse than @Nothing@,
--- but that should matter little.
-instance (Grade a) => Grade (Maybe a) 
+In many cases, it is not necessary to make your data an instance of
+@PsoSized@. Generally, this is only used if you wish to use @'upVMax'@.
+-}
+class (PsoVect a) => PsoSized a 
   where
-    Nothing  `betterThan` _        = False
-    _        `betterThan` Nothing  = True
-    (Just x) `betterThan` (Just y) = x `betterThan` y
+    dot :: a -> a -> Double
+
+{-
+If we have a @PsoSized@ element, then it has a length. This is the
+square of that length.
+-}
+pSqMag :: (PsoSized a) => a -> Double
+pSqMag x = x `dot` x
 
 {- |
-A guide for a particle. The term "guide" originates from (as far as I
+A guide for a particle. The term /guide/ originates from (as far as I
 can tell) this paper on velocity adaptation.
 
-Helwig, Sabine, Frank Neumann, and Rolf Wanka. "Particle swarm
-optimization with velocity adaptation." Adaptive and Intelligent
+Helwig, Sabine, Frank Neumann, and Rolf Wanka. \"Particle swarm
+optimization with velocity adaptation.\" Adaptive and Intelligent
 Systems, 2009. ICAIS'09. International Conference on. IEEE, 2009.
 
 It stores both the location of the possible minimum, and the value of
@@ -231,13 +262,26 @@ Updater is the function which takes as arguments:
 It returns the new velocity of the particle.
 
 Normally, updaters are not created through this constructor, but through
-one of the @updater*@ functions (e.g. @'updaterStandard'@,
-@'updaterOriginal'@, etc.)
+one of the @up*@ functions (e.g. @'upStandard'@,
+@'upOriginal'@, etc.), or by combining some of the builder functions
+through @<>@.
 -}
 data Updater a b = Updater {
     newVel :: StdGen -> Particle a b -> PsoGuide a b -> Integer -> (a, StdGen)
     }
 
+{- |
+Updaters form a @Monoid@ under (essentially) composition. An @Updater@
+is just a wrapper on a function @f :: StdGen -> Particle a b -> PsoGuide
+a b -> Integer -> (a, StdGen)@. A @Particle a b@ is really just a
+position (type @a@), a velocity (type @a@), and a
+private guide (type @PsoGuide a b@). If we regard the position, private
+guide, local guide, and iteration to be constant, then an @Updater@ just
+is just a function @StdGen -> a -> (a, StdGen)@ which takes a velocity
+and a standard generator to produce a new velocity and a new standard
+generator.  In this way, we can think about composing @Updaters@ - this
+composition forms a @Monoid@.
+-}
 instance (PsoVect a, Grade b) => Monoid (Updater a b)
   where
     mempty = Updater (\g (Particle _ v _) _ _ -> (v, g))
@@ -247,13 +291,25 @@ instance (PsoVect a, Grade b) => Monoid (Updater a b)
           where
             (v', gen') = g gen part lg i
 
-{- |
+{- $buildingUpdaters
 The following Updaters are simple building blocks for building more
-complex Updaters.
+complex Updaters. Ex. If you have an Updater @u@ and you wish to change
+it so that it has a maximum velocity, you can use @upMaxVel <> u@.
+-}
+
+{- |
+Add to the velocity a random vector between the particle's current
+position and the location of the local guide, scaled by the given
+@Double@.
 -}
 upAddLocal :: (PsoVect a, Grade b) => Double -> Updater a b
 upAddLocal c = upAddLocalDynamic $ const c
 
+{- |
+Add to the velocity a random vector between the particle's current
+position and the location of the local guide, scaled by the given
+@Integer -> Double@ (fed by the current iteration).
+-}
 upAddLocalDynamic :: (PsoVect a, Grade b) => (Integer -> Double) -> Updater a b
 upAddLocalDynamic c = Updater f
   where
@@ -262,9 +318,19 @@ upAddLocalDynamic c = Updater f
         v' = pAdd v $ pScale (c i) dl
         (dl, gen') = randomR (pZero, pSubtract lg p) gen
 
+{- |
+Add to the velocity a random vector between the particle's current
+position and the location of the private guide, scaled by the given
+@Double@.
+-}
 upAddPrivate :: (PsoVect a, Grade b) => Double -> Updater a b
 upAddPrivate c = upAddPrivateDynamic $ const c
 
+{- |
+Add to the velocity a random vector between the particle's current
+position and the location of the private guide, scaled by the given
+@Integer -> Double@ (fed by the current iteration).
+-}
 upAddPrivateDynamic :: (PsoVect a, Grade b) => (Integer -> Double) -> Updater a b
 upAddPrivateDynamic c = Updater f
   where
@@ -273,17 +339,31 @@ upAddPrivateDynamic c = Updater f
         v' = pAdd v $ pScale (c i) dp
         (dp, gen') = randomR (pZero,  pSubtract pg p) gen
 
+{- |
+Scale the velocity by the given @Double@.
+-}
 upScale :: (PsoVect a, Grade b) => Double -> Updater a b
 upScale c = upScaleDynamic $ const c
 
+{- |
+Scale the velocity by the given @Integer -> Double@ (fed by the current
+iteration).
+-}
 upScaleDynamic :: (PsoVect a, Grade b) => (Integer -> Double) -> Updater a b
 upScaleDynamic c = Updater f
   where
     f gen (Particle _ v _) _ i = (pScale (c i) v, gen)
 
+{- |
+Cap the velocity at the magnitude of the given @a@.
+-}
 upVMax :: (PsoSized a, Grade b) => a -> Updater a b
 upVMax max = upVMaxDynamic $ const max
 
+{- |
+Cap the velocity at the magnitude of the given @Integer -> a@ (fed by
+the current iteration).
+-}
 upVMaxDynamic :: (PsoSized a, Grade b) => (Integer -> a) -> Updater a b
 upVMaxDynamic max = Updater f
   where
@@ -291,12 +371,18 @@ upVMaxDynamic max = Updater f
         GT -> (max i, gen)
         _  -> (v, gen)
 
+{- $updaters
+These updaters are some of the updaters that I could find in papers on
+PSO. In particular, the @'upStandard'@ updater is recent and performs
+well in a myriad of situations.
+-}
+
 {- |
-Create an @'Updater'@ using the so-called "standard PSO" parameters,
+Create an @'Updater'@ using the so-called /standard PSO/ parameters,
 given in
 
-Bratton, Daniel, and James Kennedy. "Defining a standard for particle
-swarm optimization." Swarm Intelligence Symposium, 2007. SIS 2007. IEEE.
+Bratton, Daniel, and James Kennedy. \"Defining a standard for particle
+swarm optimization.\" Swarm Intelligence Symposium, 2007. SIS 2007. IEEE.
 IEEE, 2007.
 
 If in doubt, the paper suggests that the constriction parameter be given
@@ -308,13 +394,13 @@ upStandard :: (PsoVect a, Grade b)
     -> Double  -- ^ Tendancy toward private guide (c1)
     -> Double  -- ^ Tendancy toward local guide (c2)
     -> Updater a b
-upStandard chi c1 c2 = (upScale chi) `mappend` (upAddLocal c2) `mappend` (upAddPrivate c1)
+upStandard chi c1 c2 = (upScale chi) <> (upAddLocal c2) <> (upAddPrivate c1)
 
 {- |
 The updater with parameters suggested as a starting point in
 
-Bratton, Daniel, and James Kennedy. "Defining a standard for particle
-swarm optimization." Swarm Intelligence Symposium, 2007. SIS 2007. IEEE.
+Bratton, Daniel, and James Kennedy. \"Defining a standard for particle
+swarm optimization.\" Swarm Intelligence Symposium, 2007. SIS 2007. IEEE.
 IEEE, 2007.
 
 Normally, one should search for better parameters, since parameter
@@ -326,7 +412,7 @@ upDefault = upStandard 0.72984 2.05 2.05
 {- |
 The original updater function, defined in
 
-Kennedy, James, and Russell Eberhart. "Particle swarm optimization."
+Kennedy, James, and Russell Eberhart. \"Particle swarm optimization.\"
 Neural Networks, 1995. Proceedings., IEEE International Conference on.
 Vol. 4. IEEE, 1995.
 
@@ -336,13 +422,13 @@ upOriginal ::(PsoVect a, Grade b)
     => Double  -- ^ Tendancy toward private guide (c1)
     -> Double  -- ^ Tendancy toward local guide (c2)
     -> Updater a b
-upOriginal c1 c2 = (upAddLocal c2) `mappend` (upAddPrivate c1)
+upOriginal c1 c2 = (upAddLocal c2) <> (upAddPrivate c1)
 
 {- |
 An updater using a constant inertia weight factor, as can be found in
 
-Shi, Yuhui, and Russell Eberhart. "Parameter selection in particle swarm
-optimization." Evolutionary Programming VII. Springer Berlin/Heidelberg,
+Shi, Yuhui, and Russell Eberhart. \"Parameter selection in particle swarm
+optimization.\" Evolutionary Programming VII. Springer Berlin/Heidelberg,
 1998.
 -}
 
@@ -351,13 +437,13 @@ upInertiaWeight :: (PsoVect a, Grade b)
     -> Double  -- ^ Tendancy toward private guide (c1)
     -> Double  -- ^ Tendancy toward local guide (c2)
     -> Updater a b
-upInertiaWeight omega c1 c2 = (upAddLocal c2) `mappend` (upAddPrivate c1) `mappend` (upScale omega)
+upInertiaWeight omega c1 c2 = (upAddLocal c2) <> (upAddPrivate c1) <> (upScale omega)
 
 {- |
 An updater using a dynamic inertia weight factor, as can be found in
 
-Shi, Yuhui, and Russell Eberhart. "Parameter selection in particle swarm
-optimization." Evolutionary Programming VII. Springer Berlin/Heidelberg,
+Shi, Yuhui, and Russell Eberhart. \"Parameter selection in particle swarm
+optimization.\" Evolutionary Programming VII. Springer Berlin/Heidelberg,
 1998.
 -}
 
@@ -366,7 +452,7 @@ upInertiaWeightDynamic :: (PsoVect a, Grade b)
     -> Double               -- ^ Tendancy toward private guide (c1)
     -> Double               -- ^ Tendancy toward local guide (c2)
     -> Updater a b
-upInertiaWeightDynamic omega c1 c2 = (upAddLocal c2) `mappend` (upAddPrivate c1) `mappend` (upScaleDynamic omega)
+upInertiaWeightDynamic omega c1 c2 = (upAddLocal c2) <> (upAddPrivate c1) <> (upScaleDynamic omega)
 
 {- | 
 A @Swarm@ keeps track of all the particles in the swarm, the function
@@ -477,12 +563,8 @@ updateParticle part@(Particle p v pg) (Swarm ps lg f up i) g = (Particle p' v' p
 -- Analysis
 -- ===============
 
-class (PsoVect a) => PsoSized a 
-  where
-    pSqMag :: a -> Double
-
-{-
-The center of the swarm.
+{- |
+Find the center of the swarm.
 -}
 center :: (PsoVect a) => Swarm a b -> a
 center (Swarm ps _ _ _ _) = avg sumPoints
@@ -500,8 +582,8 @@ avgScore (Swarm ps _ f _ _) = avg $ map (val . pGuide) ps
     avg xs = (sum xs) / (fromIntegral $ length xs)
 -}
 
-{-
-Total variance of distance points are from the center of the swarm.
+{- |
+Total variance of the distance points are from the center of the swarm.
 Measures how close the swarm is to converging, and can be used to
 determine if a swarm has converged on a point or not.
 -}
@@ -540,7 +622,7 @@ instance PsoVect Double
 
 instance PsoSized Double 
   where
-    pSqMag = (^2)
+    dot = (*)
 
 {-
 instance PsoVect Rational 
@@ -576,7 +658,7 @@ instance (PsoVect a, PsoVect b) => PsoVect (a, b)
 
 instance (PsoSized a, PsoSized b) => PsoSized (a, b) 
   where
-    pSqMag (x,y) = pSqMag x + pSqMag y
+    (x1, y1) `dot` (x2, y2) = x1 `dot` x2 + y1 `dot` y2
 
 {- 
 Declaration for triples of PsoVects
@@ -604,5 +686,30 @@ instance (PsoVect a, PsoVect b, PsoVect c) => PsoVect (a, b, c)
 
 instance (PsoSized a, PsoSized b, PsoSized c) => PsoSized (a, b, c) 
   where
-    pSqMag (x,y,z) = pSqMag x + pSqMag y + pSqMag z
+    (x1, y1, z1) `dot` (x2, y2, z2) = x1 `dot` x2 + y1 `dot` y2 + z1 `dot` z2
+
+-- Grades
+instance Grade Double 
+  where
+    betterThan = (<)
+
+instance Grade Int 
+  where
+    betterThan = (<)
+
+instance Grade Integer 
+  where
+    betterThan = (<)
+
+instance Grade Char 
+  where
+    betterThan = (<)
+
+-- In this case, it turns out that @Nothing@ is worse than @Nothing@,
+-- but that should matter little.
+instance (Grade a) => Grade (Maybe a) 
+  where
+    Nothing  `betterThan` _        = False
+    _        `betterThan` Nothing  = True
+    (Just x) `betterThan` (Just y) = x `betterThan` y
 
