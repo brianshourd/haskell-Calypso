@@ -361,19 +361,20 @@ upScaleDynamic c = Updater f
 {- |
 Cap the velocity at the magnitude of the given @a@.
 -}
-upVMax :: (PsoSized a, Grade b) => a -> Updater a b
+upVMax :: (PsoSized a, Grade b) => Double -> Updater a b
 upVMax max = upVMaxDynamic $ const max
 
 {- |
 Cap the velocity at the magnitude of the given @Integer -> a@ (fed by
 the current iteration).
 -}
-upVMaxDynamic :: (PsoSized a, Grade b) => (Integer -> a) -> Updater a b
+upVMaxDynamic :: (PsoSized a, Grade b) => (Integer -> Double) -> Updater a b
 upVMaxDynamic max = Updater f
   where
     f gen (Particle _ v _) _ i = case (compare `on` pSqMag) v (max i) of
-        GT -> (max i, gen)
+        GT -> (pScale (max i) unitV, gen)
         _  -> (v, gen)
+    unitV = pScale ((/) 1 . sqrt . pSqMag $ v) v
 
 {- $updaters
 These updaters are some of the updaters that I could find in papers on
@@ -478,10 +479,15 @@ instance (Show a, Show b) => Show (Swarm a b)
   where
     show (Swarm ps b _ _ _) = show ( map pGuide ps) ++ show b
 
+{-
+If you don't care about such things as the number of particles or the
+particular Updater used, use this function to get a decent attempt at a
+good swarm.
+-}
 defaultSwarm :: (PsoVect a, Random a, Grade b)
-    => (a -> b)
-    -> (a, a)
-    -> StdGen
+    => (a -> b)  -- ^ Function to optimize
+    -> (a, a)    -- ^ Bounds to begin search
+    -> StdGen    -- ^ Random generator
     -> (Swarm a b, StdGen)
 defaultSwarm f bounds gen = randomSwarm gen 50 bounds f upDefault
 

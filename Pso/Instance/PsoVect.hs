@@ -1,7 +1,7 @@
 {-# LANGUAGE TypeSynonymInstances #-}
 {-# LANGUAGE FlexibleInstances #-}
 
-module Pso.Instances where
+module Pso.Instance.PsoVect where
 
 import Pso.Core
 
@@ -22,6 +22,17 @@ instance PsoVect Double
 instance PsoSized Double 
   where
     dot = (*)
+
+instance PsoVect Float
+  where
+    pAdd = (+)
+    pScale r = (*) (fromRational . toRational $ r)
+    pZero = 0
+    pSubtract = (-)
+
+instance PsoSized Float
+  where
+    dot x y = fromRational . toRational $ x * y
 
 instance Random Rational
   where
@@ -162,33 +173,3 @@ instance (PsoVect a, PsoVect b, PsoVect c, PsoVect d, PsoVect e) => PsoVect (a, 
 instance (PsoSized a, PsoSized b, PsoSized c, PsoSized d, PsoSized e) => PsoSized (a, b, c, d, e)
   where
     (v1, w1, x1, y1, z1) `dot` (v2, w2, x2, y2, z2) = v1 `dot` v2 + w1 `dot` w2 + x1 `dot` x2 + y1 `dot` y2 + z1 `dot` z2
-
--- Grades
-instance Grade Double 
-  where
-    betterThan = (<)
-
-instance Grade Rational
-  where
-    betterThan = (<)
-
-instance Grade Int 
-  where
-    betterThan = (<)
-
-instance Grade Integer 
-  where
-    betterThan = (<)
-
-instance Grade Char 
-  where
-    betterThan = (<)
-
--- In this case, it turns out that @Nothing@ is worse than @Nothing@,
--- but that should matter little.
-instance (Grade a) => Grade (Maybe a) 
-  where
-    Nothing  `betterThan` _        = False
-    _        `betterThan` Nothing  = True
-    (Just x) `betterThan` (Just y) = x `betterThan` y
-
