@@ -1,6 +1,11 @@
 {-# LANGUAGE TypeSynonymInstances #-}
 {-# LANGUAGE FlexibleInstances #-}
 
+{- |
+Defines the instances for @PsoVect@ and @PsoSized@. In particular,
+tuples of @Float@, @Double@, and @Rational@ are all instances.
+-}
+
 module Pso.Instance.PsoVect where
 
 import Pso.Core

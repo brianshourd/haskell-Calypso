@@ -15,6 +15,9 @@ good: <http://en.wikipedia.org/wiki/Particle_swarm_optimization>
 Note that we are using a method with /constriction parameters/, while
 the wikipedia article puts forward a method using /inertia weight/. The
 two are similar, but not identical.
+
+For an overview of how to use this module, see the README available at
+<https://github.com/brianshourd/haskell-PSO/blob/master/README.md>. 
 -}
 
 module Pso.Core
@@ -25,7 +28,6 @@ module Pso.Core
     Grade(..),
     PsoSized(..),
     -- * Easy Method
-    -- $easy
     easyOptimize,
     -- * Updaters
     Updater(..),
@@ -71,8 +73,8 @@ import System.Random
 In general, to use this library, you will be optimizing a function @f ::
 a -> b@. This library will work so long as
 
-1. @a@ is a member of the @'PsoVect'@ type class, and
-2. @b@ is a member of the @'Grade'@ type class.
+    1. @a@ is a member of the @'PsoVect'@ type class, and
+    2. @b@ is a member of the @'Grade'@ type class.
 
 Ex. You want to minimize the function @f (x,y) = x^2 + y^2@. Then @f@
 has type @f :: (Double, Double) -> Double@, where lower scores are
@@ -371,10 +373,10 @@ the current iteration).
 upVMaxDynamic :: (PsoSized a, Grade b) => (Integer -> Double) -> Updater a b
 upVMaxDynamic max = Updater f
   where
-    f gen (Particle _ v _) _ i = case (compare `on` pSqMag) v (max i) of
-        GT -> (pScale (max i) unitV, gen)
+    f gen (Particle _ v _) _ i = case compare (pSqMag v) ((max i)^2) of
+        GT -> (pScale (max i) (unitV v), gen)
         _  -> (v, gen)
-    unitV = pScale ((/) 1 . sqrt . pSqMag $ v) v
+    unitV v = pScale ((/) 1 . sqrt . pSqMag $ v) v
 
 {- $updaters
 These updaters are some of the updaters that I could find in papers on

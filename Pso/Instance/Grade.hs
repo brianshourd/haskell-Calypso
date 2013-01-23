@@ -1,6 +1,22 @@
 {-# LANGUAGE TypeSynonymInstances #-}
 {-# LANGUAGE FlexibleInstances #-}
 
+{- |
+This module defines instances for the typeclass @Grade@. The types
+
+    * Double
+    * Float
+    * Rational
+    * Int
+    * Integer
+    * Char
+
+are all graded according to @(<)@ (smaller is better).
+
+The type @Maybe a@ is graded so that @Nothing@ is worse than @Just x@
+for any @x@.
+-}
+
 module Pso.Instance.Grade where
 
 import Pso.Core
