@@ -1,5 +1,5 @@
-haskell-ParticleSwarmOptimization
-=================================
+haskell-PSO
+===========
 
 Firstly, let me say that this is a work in progress. Notably, it is
 still missing some examples and features. What is here, though, works.
@@ -11,187 +11,346 @@ Optimization" by James Kennedy and Russel Eberhart. Alternately,
 entry](http://en.wikipedia.org/wiki/Particle_swarm_optimization) is
 pretty good.
 
-Essentially, we have a function `f :: a -> Double` which we want to
-optimize. That is, we want to find some `a` which minimizes `f`. To do
-this, we will create a swarm of particles, then let those particles run
-free until a good solution is found. This is done by makeing the `a`
-type (the input type of the function to minimize) an instance of the
-`PSOVect` class.
+If you want to know the specific flavor of algorithm that this library
+is based on, consult
 
-## Make a PSOVect instance
+Bratton, Daniel, and James Kennedy. "Defining a standard for particle
+swarm optimization." Swarm Intelligence Symposium, 2007. SIS 2007. IEEE.
+IEEE, 2007.
 
-Ex: Suppose we want to minimize the function `f (x,y) = x^2 + y^2`. The
-type signature of `f` is `f :: (Double, Double) -> Double`. We'll need
-to make `(Double, Double)` an instance of the `PSOVect` typeclass
-[Footnote: Actually, (Double, Double) is one of the pre-packaged
-instances of PSOVect, so we can skip this step. For mosttypes, though,
-we can't]. In particular, we'll need to define a way to add together two
-`(Double, Double)`s, a way to multiply a `(Double, Double)` by a
-`Double` scalar, and a zero for `(Double, Double)`. That instance looks
-like:
+Note that while updating based on the so-called "local swarm" is
+desired, it is not yet implemented. This library uses the slightly-less
+effective "global swarm". Otherwise, this library conforms perfectly to
+the standard PSO given in the paper above (although other PSO models are
+supported as well).
 
-    instance PSOVect (Double, Double) where
-        pAdd (x1, y1) (x2, y2) = (x1 + x2, y1 + y2)
-        pScale r (x,y) = (r * x, r * y)
-        pZero = (0,0)
+## Example
 
-That's it. Next, we'll want to create a swarm.
+Let's start with an example, and then enumerate all of the ways in which
+your needs might differ from the example. We want to find the minimum
+value of the function
 
-## Create a swarm
+    f :: (Double, Double) -> Double
+    f (x,y) = x^2 + y^2
 
-We can create a swarm in three ways. The first, and most
-common, way is via `randomSwarm`.
+First, we'll load the module
 
-    randomSwarm :: (PSOVect a, Random a, RandomGen b) => b -> Int -> (a,a) -> (a -> Double) -> PSOParams -> (Swarm a, b)
+    import Pso
 
-Notice that `randomSwarm` requires that our `a` (in this example,
-`(Double, Double)`) be an instance of `PSOVect`, but also of `Random`.
-So we declare an instance
+If we have no strong feelings, we can just use `easyOptimize`
 
-    instance Random (Double, Double) where
-        random g = ((x, y), g'') where
-            (x, g')  = random g
-            (y, g'') = random g'
-        randomR ((a1, b1), (a2, b2)) g = ((x, y), g'') where
-            (x, g')  = randomR (a1, a2) g
-            (y, g'') = randomR (b1, b2) g'
+    easyOptimize :: (PsoVect a, Random a, Grade b) 
+        => (a -> b)  -- Function to optimize
+        -> (a, a)    -- Bounds to create particles within
+        -> Integer   -- Number of iterations
+        -> StdGen    -- Generator to use
+        -> PsoGuide a b
 
-[Footnote: again, this has already been done for (Double, Double)] Now we can call `randomSwarm`:
+So if we wish to look at points `(x, y)` with `-5 <= x <= 5` and `-5 <=
+y <= 5`, we can call
 
-    ghci> gen <- getStdGen
-    ghci> let f = (\(x,y) -> x^2 + y^2) :: (Double, Double) -> Double
-    ghci> let (s,g) = randomSwarm
-            gen             -- Seed for randomness
-            20              -- number of particles
-            ((-5,-5),(5,5)) -- range to look
-            f               -- function to optimize
-            defaultPSOParams    -- default parameters
+    main = do
+        gen <- newStdGen
+        let guide = easyOptimize f ((-5, -5), (5, 5)) 1000 gen
+        putStrLn $ "The minimum appears to be: " ++ (show $ val guide)
+        putStrLn $ "It occurs at: " ++ (show $ pt guide)
 
-The second way to create a swarm is through `createSwarm`.
+We can see that the object returned (`PsoGuide (Double, Double) Double`)
+contains both the minimum value of `f` and the point at which it occurs.
 
-    createSwarm :: (PSOVect a) => [a] -> (a -> Double) -> PSOParams -> Swarm a
+The function `easyOptimize` is fun, but doesn't give us a lot of
+control. In general, we might want to see _all_ attempts at a solution,
+not just the 1000th. Then we can better decide what the minimum might
+be.
 
-For this, you supply the initial points, instead of them being generated
-randomly. This is nice if, say, you wanted to begin with a grid of
-particles or something. It initializes the swarm so that every particle
-has initial velocity zero (technically `pZero`).
+To do this, we'll need to create a `Swarm (Double, Double) Double`. We
+can use the function `defaultSwarm`.
 
-The last way is directly, through the constructor.
+    defaultSwarm :: (PsoVect a, Random a, Grade b)
+        => (a -> b)  -- ^ Function to optimize
+        -> (a, a)    -- ^ Bounds to begin search
+        -> StdGen    -- ^ Random generator
+        -> (Swarm a b, StdGen)
 
-    data Swarm a = Swarm {
-        parts :: [Particle a],  -- particles in the swarm
-        gBest :: PSOCand a,     -- best position found
-        func :: a -> Double,    -- funtion to minimize
-        params :: PSOParams,    -- parameters
-        iteration :: Integer    -- current iteration
+Once we've created a swarm, we'll want to update it. In fact, it would
+be best if we could just update it repeatedly, obtaining an infinite
+list of better and better swarms.
+
+    iterateSwarm :: (PsoVect a, Grade b) => Swarm a b -> StdGen -> [Swarm a b]
+
+Because `defaultSwarm` returns a `Swarm` and a `StdGen`, we can call
+both of these in order with
+
+    let ss = (uncurry iterateSwarm) $ defaultSwarm f ((-5, -5), (5, 5)) gen
+
+This gives us a list of swarms, each one (hopefully) better than the
+last. There are a number of things that we can do with this - we can
+look to see when we stop seeing improvements for, say, 20 steps.
+
+    putStrLn . show . head . head . dropWhile ((<=20) . length) . group . map (val . gGuide) $ ss
+
+Or, we could look to see when all of our particles have started to
+cluster. There is a built-in function for this.
+
+    posVariance :: (PsoSized a) => Swarm a b -> Double
+
+`posVariance` measures the variance of the distances of the particles
+(actually, the squares of the distances).  We could find the value once
+this variance drops below 0.000001.
+
+    putStrLn . show . gGuide . head . dropWhile ((> 0.000001) . posVariance) $ ss
+
+Our modified `main` looks like
+
+    main = do
+        gen <- newStdGen
+        let ss = (uncurry iterateSwarm) $ defaultSwarm f ((-5, -5), (5, 5)) gen
+        putStrLn "No improvements for 20 steps:"
+        putStrLn . show . head . head . dropWhile ((<=20) . length) . group . map (val . gGuide) $ ss
+        putStrLn "Variance of particle positions below 0.000001:"
+        putStrLn . show . gGuide . head . dropWhile ((> 0.000001) . posVariance) $ ss
+
+Looks like there is a minimum of 0 near (0,0). At least, at first
+glance.
+
+# My function is different!
+
+We don't always want to minimize a function `f :: (Double, Double) ->
+Double`, and we don't always want to perform the default search. Here
+are some ways that this library can handle optimization of other
+functions.
+
+## Different input
+
+Maybe you would rather minimize a function
+
+    f :: (Double, Double, Double) -> Double
+
+Or, more generally, just some function
+
+    f :: a -> Double
+
+Short story: you need `a` to be an instance of `PsoVect`. Built in
+instances (in `Pso.Instance.Grade` and `Pso.Instance.PsoVect`) include:
+
+    Double
+    (Double, Double)
+    (Double, Double, Double)
+    (Double, Double, Double, Double)
+    (Double, Double, Double, Double, Double)
+
+Replace any of the above `Double` values with `Float` or `Rational`, and
+you are still just fine. In, fact, you can replace any of the above
+`Double` with any other instance of `PsoVect` and you are still fine.
+Ex:
+
+    (Double, (Float, Double), (Float, Float, Rational))
+    (Double, (Double, (Double, Double)))
+
+But I only go up to five. Why five? Because if you have more than that,
+you should define your own instance of `PsoVect` (don't worry, it isn't
+hard). For that, see the documentation. You'll probably also want to
+make your type an instance of `PsoSized`, which will allow you to use
+e.g. `posVariance`.
+
+## Different output
+
+Maybe you want to minimize a function 
+
+    f :: (Double, Double) -> Int
+
+or, more generally,
+    
+    f :: (Double, Double) -> b
+
+That's fine. You need `b` to be an instance of the type `Grade`. In
+`Pso.Instance.Grade`, I include instances for
+
+    Double
+    Rational
+    Float
+    Int
+    Integer
+    Char
+
+All are built so that `<` means "better than". If you want to make your
+own type an instance of `Grade`, all you need to do is define either
+`betterThan` or `worseThan`.
+
+    class Grade b
+      where
+        betterThan :: b -> b -> Bool
+        worseThan  :: b -> b -> Bool
+
+There is also an instance for `Maybe b`, where `b` is one of the grades
+above. See the section *Bounded Searching* for more details.
+
+## I'd rather maximize
+
+Maybe you want to *maximize* a function `f :: (Double, Double) ->
+Double`. In that case, it's probably easiest to just minimize `negate .
+f`.
+
+However, if not, all you need to do is create a new instance of `Grade
+Double` with
+
+    instance Grade Double
+      where
+        betterThan = (>)
+
+You'll need to omit the module where the default instance is loaded, so
+your import statements will look more like
+
+    import Pso.Core
+    -- import Pso.Instances.Grade
+    import Pso.Instances.PsoVect
+
+## Bounded searching
+
+Sometimes, we don't want to find the *global* minimum, just the minimum
+subject to certain restrictions. For instance, suppose we want to
+minimize
+    
+    f :: (Double, Double) -> Double
+    f (x, y) = 4 * x + 2 * y - 3
+
+subject to the constraint `1 <= x <= 3` and `0 <= y <= 2`. One way to
+think about this is to modify our function:
+
+    f' :: (Double, Double) -> Maybe Double
+    f' (x, y)
+        | withinBounds = Just $ 4 * x + 2 * y - 3
+        | otherwise    = Nothing
+      where
+        withinBounds = 1 <= x &&
+                       x <= 3 &&
+                       0 <= y &&
+                       y <= 2
+
+We can read this as: outside of the bounds, our function is so bad that
+you shouldn't even consider it. Just don't. Our particles are allowed to
+leave the bounds, the function is just so bad out there that they will
+eventually be drawn back in.
+
+Side note: in the paper "Defining a standard for particle swarm
+optimization" by Daniel Bratton and James Kennedy (2007), they discover
+that this method of letting the particles "fly free", rather than
+constraining them, performs very well in a variety of situations.
+
+## Alternate parameters
+
+In general, each step we update each particle's velocity, and then use
+that velocity to update it's position. But there are a lot of ways to
+update the particle's velocity.
+
+All of them involve two things:
+
+1. Find a pseudo-random vector guiding the particle towards its "private
+   guide" (the best location it has found so far). Call it `vp`.
+2. Find a pseudo-random vector guiding the particle towards its "local
+   guide" (the best location it's local swarm has found). Call it `vl`
+
+Now, take these two things, multiply them by some parameters, and add
+them to the existing velocity (perhaps also multiplied by a parameter).
+Multiply the whole thing by a parameter (maybe), and then, if you feel
+like it, artificially reduce this to a maximum velocity. Also, some of
+these parameters might by dynamic, and adjust over time.
+
+That's a lot of options.
+
+All of this is handled via the `Updater` data type. Here is it's
+constructor:
+
+    data Updater a b = Updater {
+        newVel :: StdGen -> Particle a b -> PsoGuide a b -> Integer -> (a, StdGen)
         }
 
-I won't talk more about this. It offers the finest control over your
-swarm, but you'll need to read the code to use it. One of the other two
-options should suit your needs.
+So an `Updater` is just a wrapper for a function that creates a new
+velocity for a particle using
 
-## Using a swarm
+1. A `StdGen`, to do any necessary random calculations
+2. A `Particle a b`, from which it can get position, velocity, and th
+    private guide
+3. A `PsoGuide a b`, the local guide for the particle
+4. An `Int`, the current iteration of the swarm. Useful for parameters
+    that adjust over time
 
-All that remains is to update your swarm and check for answers. The
-function `updateSwarm` helps you here.
+But really, you probably don't want to create one in this way. It's just
+useful to see what it is, and take the mystery out of it. Normally,
+you'll use one of
 
-    updateSwarm :: (PSOVect a, RandomGen b) => Swarm a -> b -> (Swarm a, b)
+    upDefault :: (PsoVect a, Grade b) => Updater a b
+    upStandard :: (PsoVect a, Grade b)
+        => Double  -- ^ Constriction parameter (chi)
+        -> Double  -- ^ Tendancy toward private guide (c1)
+        -> Double  -- ^ Tendancy toward local guide (c2)
+        -> Updater a b
+    upOriginal ::(PsoVect a, Grade b)
+        => Double  -- ^ Tendancy toward private guide (c1)
+        -> Double  -- ^ Tendancy toward local guide (c2)
+        -> Updater a b
+    upInertiaWeight :: (PsoVect a, Grade b)
+        => Double  -- ^ Inertia weight (omega)
+        -> Double  -- ^ Tendancy toward private guide (c1)
+        -> Double  -- ^ Tendancy toward local guide (c2)
+        -> Updater a b
+    upInertiaWeightDynamic :: (PsoVect a, Grade b)
+        => (Integer -> Double)  -- ^ Inertia weight (omega)
+        -> Double               -- ^ Tendancy toward private guide (c1)
+        -> Double               -- ^ Tendancy toward local guide (c2)
+        -> Updater a b
 
-The particles move semi-randomly, so we need a `RandomGen` to update the
-swarm. Fortunately, we get a new one back when we're done. If we want to
-just continually update over and over, we can call
+These are all of the Updating methods that I found in the literature,
+except for those that reduce to a maximum velocity (which may be used
+with any of the above).
 
-    ghci> let ss = iterateSwarm s g
+    upVMax :: (PsoSized a, Grade b) => Double -> Updater a b
 
-Then `ss` is of type `[Swarm (Double, Double)]`, and each element is the
-next generation/iteration of the swarm. Hopefully, this swarm has the
-answer buried in it somewhere.
+If you want to add a maximum velocity to one of these other updaters,
+you just combine them: `Updater a b` is an instance of `Monoid`! So
 
-## Getting an answer
+    upVMax 5000 <> upOriginal 2 2
 
-Right now, the library has no methods for evaluating a swarm to
-determine whether it has found an answer or what that answer may be. I
-plan to rectify this. In the mean time, you'll have to do your own
-simple analysis. Now that we have all successive swarms available in a
-list, we can find data about them just by using `map` and some built in
-functions. For example, if we just want to know what the best value of
-`f` the swarm has found with each iteration, we can 
+is an updater using the methods of the original paper (from 1995), plus
+a maximum velocity of 5000. You can actually use this `Monoid` structure
+to create loads of interesting `Updater`s very easily:
 
-    ghci> let bs = map (val . gBest) ss
+    upStandard chi c1 c2 = (upScale chi) <> (upAddLocal c2) <> (upAddPrivate c1)
 
-In this case, we might get e.g.
+This is actually the definition of `upStandard` - it's just built from
+three little `Updater`s. For more info, consult the documentation.
 
-    ghci> take 5 bs
-    [2.4934653863021836,0.2093513968956252,5.310530725404583e-3,5.310530725404583e-3,5.310530725404583e-3]
+## More swarm control
 
-Our swarm rapidly converged on 0.00531 as the lowest value. It occurs at
+Suppose that you want to have a bit more control of your swarm. You'd
+like to choose a non-default update method, or a number of particles
+other than 50 (the default number).
 
-    ghci> pt . gBest $ ss !! 2
-    (-6.063899754881441e-2,4.0415871902997e-2)
+You'll want to call either `randomSwarm` or `createSwarm`.
 
-Indeed, this is pretty good. Maybe good enough, maybe not. We can always
-adjust parameters to try to make our swarm behave better.
+    randomSwarm :: (PsoVect a, Random a, Grade b) 
+        => StdGen   -- ^ A random seed
+        -> Int      -- ^ Number of particles
+        -> (a,a)    -- ^ Bounds to create particles in
+        -> (a -> b)             -- ^ Function to optimize
+        -> Updater a b          -- ^ Updater
+        -> (Swarm a b, StdGen)  -- ^ (Swarm returned, new seed)
+    createSwarm :: (PsoVect a, Grade b)
+        => [a]          -- ^ Positions of of particles
+        -> (a -> b)     -- ^ Function to optimize
+        -> Updater a b  -- ^ Updater to use
+        -> Swarm a b
 
-## Parameter adjustment
+Read more about `Updater`s in the next section. The only difference is
+whether you have to supply the positions yourself or whether they will
+be randomly generated. In general, you want this, so you'll probably be
+using `randomSwarm`.
 
-In the paper "Parameter Selection in Particle Swarm Optimization" by
-Yuhui Shi and Russell C. Eberhart, they make the case that the
-parameters used in performing the individual particle updates should be
-chosen carefully. In fact, they suggest that parameters which vary over
-time can perform very well, especially the parameter they call "inertia
-weight".
 
-The `PSOParams` type exists to fill this void.
 
-    data PSOParams = PSOParamsStatic
-        Double  -- inertia weight
-        Double  -- tendancy toward local
-        Double  -- tendancy toward global
-        | PSOParamsDynamic 
-        (Integer -> Double)
-        (Integer -> Double)
-        (Integer -> Double)
 
-It is either a static type or a dynamic type. That is, the parameters
-are either constant, or they vary over time. The original parameters of
-1, 2, and 2 are available as `defaultPSOParams`, which we used above.
 
-    defaultPSOParams :: PSOParams
-    defaultPSOParams = PSOParamsStatic 1 2 2
 
-However, should you wish to use other parameters, this is the way to do
-it. For example, if we think that our search might behave better by
-using a linear adjustment for the inertia weight, starting at 1.0 and
-decending to 0.8 over 50 updates, we could create our own parameters.
-
-    
-    main = do
-        gen <- getStdGen
-        let f = (\(x,y) -> x^2 + y^2) :: (Double, Double) -> Double
-            pars = PSOParamsDynamic
-                (\i -> case () of
-                    _ | i < 50  -> 1.0 - (fromInteger i) * 0.016
-                      | i >= 50 -> 0.8)
-                (const 1.0)
-                (const 1.0)
-            (s,g) = randomSwarm
-                gen             -- Seed for randomness
-                20              -- number of particles
-                ((-5,-5),(5,5)) -- range to look
-                f               -- function to optimize
-                pars
-
-Indeed, if we now look at the best values, we get
-
-    ghci> take 15 $ map (val . gBest . fst) $ iterate (uncurry updateSwarm) (s,g)
-    [0.8199930172277934,8.635380746111755e-2,4.274564780384296e-2,4.274564780384296e-2,4.274564780384296e-2,7.331914679625428e-3,7.331914679625428e-3,7.331914679625428e-3,7.331914679625428e-3,1.497623382076038e-3,1.497623382076038e-3,1.497623382076038e-3,1.3584249637098452e-3,1.3584249637098452e-3,1.2008987821146627e-3]
-
-We see steady improvement, instead of stagnation. Well, actually you
-can't really see it from just this - the important thing is that it can
-actually help.
-
-For more information, see the documtation, and/or read the code itself.
-Before you do either of those, though, read the original paper.
 
 ## Things to do
 
