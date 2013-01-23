@@ -1,9 +1,6 @@
 haskell-PSO
 ===========
 
-Firstly, let me say that this is a work in progress. Notably, it is
-still missing some examples and features. What is here, though, works.
-
 This is a small module for doing Particle Swarm Optimization (PSO) in
 Haskell. For an overview of what PSO is, see the paper "Particle Swarm
 Optimization" by James Kennedy and Russel Eberhart. Alternately,
@@ -237,7 +234,33 @@ optimization" by Daniel Bratton and James Kennedy (2007), they discover
 that this method of letting the particles "fly free", rather than
 constraining them, performs very well in a variety of situations.
 
-## Alternate parameters
+### More swarm control
+
+Suppose that you want to have a bit more control of your swarm. You'd
+like to choose a non-default update method, or a number of particles
+other than 50 (the default number).
+
+You'll want to call either `randomSwarm` or `createSwarm`.
+
+    randomSwarm :: (PsoVect a, Random a, Grade b) 
+        => StdGen   -- ^ A random seed
+        -> Int      -- ^ Number of particles
+        -> (a,a)    -- ^ Bounds to create particles in
+        -> (a -> b)             -- ^ Function to optimize
+        -> Updater a b          -- ^ Updater
+        -> (Swarm a b, StdGen)  -- ^ (Swarm returned, new seed)
+    createSwarm :: (PsoVect a, Grade b)
+        => [a]          -- ^ Positions of of particles
+        -> (a -> b)     -- ^ Function to optimize
+        -> Updater a b  -- ^ Updater to use
+        -> Swarm a b
+
+Read more about `Updater`s in the next section. The only difference is
+whether you have to supply the positions yourself or whether they will
+be randomly generated. In general, you want this, so you'll probably be
+using `randomSwarm`.
+
+# Alternate parameters
 
 In general, each step we update each particle's velocity, and then use
 that velocity to update it's position. But there are a lot of ways to
@@ -320,49 +343,9 @@ to create loads of interesting `Updater`s very easily:
 This is actually the definition of `upStandard` - it's just built from
 three little `Updater`s. For more info, consult the documentation.
 
-## More swarm control
-
-Suppose that you want to have a bit more control of your swarm. You'd
-like to choose a non-default update method, or a number of particles
-other than 50 (the default number).
-
-You'll want to call either `randomSwarm` or `createSwarm`.
-
-    randomSwarm :: (PsoVect a, Random a, Grade b) 
-        => StdGen   -- ^ A random seed
-        -> Int      -- ^ Number of particles
-        -> (a,a)    -- ^ Bounds to create particles in
-        -> (a -> b)             -- ^ Function to optimize
-        -> Updater a b          -- ^ Updater
-        -> (Swarm a b, StdGen)  -- ^ (Swarm returned, new seed)
-    createSwarm :: (PsoVect a, Grade b)
-        => [a]          -- ^ Positions of of particles
-        -> (a -> b)     -- ^ Function to optimize
-        -> Updater a b  -- ^ Updater to use
-        -> Swarm a b
-
-Read more about `Updater`s in the next section. The only difference is
-whether you have to supply the positions yourself or whether they will
-be randomly generated. In general, you want this, so you'll probably be
-using `randomSwarm`.
-
-
-
-
-
-
-
 ## Things to do
-
-### Like Now
 
 * Improve documentation
 * Write example programs
 * Submit to Hackage
 
-### Future releases
-
-* Allow for bounded searching 
-* Automate discovering solutions:
-    * Target Distance
-    * Clustering
