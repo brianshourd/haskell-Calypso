@@ -1,7 +1,9 @@
-haskell-PSO
-===========
+Calypso
+=======
 
-This is a small module for doing Particle Swarm Optimization (PSO) in
+## A library for PSO
+
+This is a small library for doing Particle Swarm Optimization (PSO) in
 Haskell. For an overview of what PSO is, see the paper "Particle Swarm
 Optimization" by James Kennedy and Russel Eberhart. Alternately,
 [wikipedia's
@@ -128,7 +130,8 @@ Or, more generally, just some function
     f :: a -> Double
 
 Short story: you need `a` to be an instance of `PsoVect`. Built in
-instances (in `Pso.Instance.Grade` and `Pso.Instance.PsoVect`) include:
+instances (in `Calypso.Instance.Grade` and `Calypso.Instance.PsoVect`)
+include:
 
     Double
     (Double, Double)
@@ -145,10 +148,23 @@ Ex:
     (Double, (Double, (Double, Double)))
 
 But I only go up to five. Why five? Because if you have more than that,
-you should define your own instance of `PsoVect` (don't worry, it isn't
-hard). For that, see the documentation. You'll probably also want to
-make your type an instance of `PsoSized`, which will allow you to use
-e.g. `posVariance`.
+you probably want a `PsoList`. It's a wrapper for a list that knows how
+long it is.
+
+    fromList :: [a] -> PsoList a
+    toList :: PsoList a -> [a]
+
+It works so long as `a` is an instance of `PsoVect`. Why do I need to
+wrap my lists? Because of reasons (if you are interested, check the code
+or email me).
+
+If none of these are what you want, then you have two options:
+
+1. Construct isomorphism functions to one of these data types.
+2. Make your data type an instance of `PsoVect`.
+
+The former is much easier, but the latter may be cleaner. I don't have
+an example of these yet, but I'm working on one.
 
 ## Different output
 
@@ -161,7 +177,7 @@ or, more generally,
     f :: (Double, Double) -> b
 
 That's fine. You need `b` to be an instance of the type `Grade`. In
-`Pso.Instance.Grade`, I include instances for
+`Calypso.Instance.Grade`, I include instances for
 
     Double
     Rational
@@ -188,8 +204,8 @@ Maybe you want to *maximize* a function `f :: (Double, Double) ->
 Double`. In that case, it's probably easiest to just minimize `negate .
 f`.
 
-However, if not, all you need to do is create a new instance of `Grade
-Double` with
+However, if you'd rather not confuse yourself with extra `negate`s all
+over, all you need to do is create a new instance of `Grade Double` with
 
     instance Grade Double
       where
@@ -198,9 +214,9 @@ Double` with
 You'll need to omit the module where the default instance is loaded, so
 your import statements will look more like
 
-    import Pso.Core
-    -- import Pso.Instances.Grade
-    import Pso.Instances.PsoVect
+    import Calypso.Core
+    -- import Calypso.Instances.Grade
+    import Calypso.Instances.PsoVect
 
 ## Bounded searching
 
@@ -234,7 +250,7 @@ optimization" by Daniel Bratton and James Kennedy (2007), they discover
 that this method of letting the particles "fly free", rather than
 constraining them, performs very well in a variety of situations.
 
-### More swarm control
+## More swarm control
 
 Suppose that you want to have a bit more control of your swarm. You'd
 like to choose a non-default update method, or a number of particles
@@ -260,7 +276,7 @@ whether you have to supply the positions yourself or whether they will
 be randomly generated. In general, you want this, so you'll probably be
 using `randomSwarm`.
 
-# Alternate parameters
+## Alternate parameters
 
 In general, each step we update each particle's velocity, and then use
 that velocity to update it's position. But there are a lot of ways to
@@ -343,9 +359,53 @@ to create loads of interesting `Updater`s very easily:
 This is actually the definition of `upStandard` - it's just built from
 three little `Updater`s. For more info, consult the documentation.
 
-## Things to do
+## Stack Overflow!
+
+If you are using big swarms over a large-dimensional vector space for
+many iteration, and `iterateSwarm` eventually gives you a stack
+overflow, it may be because you are keeping track of every past version
+of your swarm all at once.
+
+If you aren't interested in all this data (and let's be honest, unless
+you are examining the *process* of PSO, you aren't - you only care about
+the result), you can use `iterateWhile`
+
+    iterateWhile :: (PsoVect a, Grade b) 
+        => (Swarm a b -> Bool)  -- ^ Condition to meet
+        -> Swarm a b            -- ^ Swarm to update
+        -> StdGen               -- ^ Random seed
+        -> Swarm a b
+
+It will update your swarm for as long as the condition specfied is met,
+ignoring the past and proceeding blindly ahead. My tests indicate that
+this doesn't build up the stack at all, but I do not yet understand
+haskell profiling, so I make no guarantees. You want examples?
+
+Iterate until variance of particles is below 0.001:
+
+    iterateWhile ((> 0.001) . posVariance) s gen
+
+Iterate until the grade of at least @good@ is reached:
+
+    iterateWhile ((`worseThan` good) . val . gGuide) s gen
+
+Iterate @n@ times:
+
+    iterateWhile ((<n) . iteration) s gen
+
+## More Questions?
+
+Consult the documentation! It can be built with
+
+    haddock -h -o docs Calypso.hs
+
+Soon, I will have the library up on Hackage, and then you can browse the
+docs there.
+
+# Things to do
 
 * Improve documentation
 * Write example programs
+* Write test suite
 * Submit to Hackage
 

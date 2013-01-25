@@ -20,11 +20,12 @@ For an overview of how to use this module, see the README available at
 <https://github.com/brianshourd/haskell-PSO/blob/master/README.md>. 
 -}
 
-module Pso.Core
+module Calypso.Core
     (
     -- * Main Classes
     -- $typeclasses
     PsoVect(..), 
+    Between(..),
     Grade(..),
     PsoSized(..),
     -- * Easy Method
@@ -54,6 +55,9 @@ module Pso.Core
     createSwarm, 
     updateSwarm, 
     iterateSwarm,
+    iterateWhile,
+    -- * Helper functions
+    boundTo,
     -- * Data Structures
     PsoGuide(..), 
     Particle(..), 
@@ -64,6 +68,8 @@ module Pso.Core
     posVariance,
 --    scoreVariance
     ) where
+
+import Control.DeepSeq
 import Data.Function (on)
 import Data.List (foldl', genericIndex)
 import Data.Monoid
@@ -126,18 +132,45 @@ Notice that the first 2 laws are the Monoid laws (mAppend = pAdd, mempty
 If these laws are satisfied, we can prove that the additive inverse of
 @v@ is @pScale (-1) v@, so we can automatically define @'pSubtract'@.
 However, you may provide a faster implementation if you wish.
-
-Random is a requirement of this typeclass, as well. Especially randomR,
-which should work on a component-by-component basis. See the examples
-for more information on how/why Random is required.
 -}
-class (Random a) => PsoVect a 
+class (Between a) => PsoVect a 
   where
     pAdd :: a -> a -> a
     pZero :: a
     pScale :: Double -> a -> a
     pSubtract :: a -> a -> a
     pSubtract v1 v2 = pAdd v1 $ pScale (-1) v2
+
+{- |
+This class encodes the meaning when we say something like "pick a point
+between (-1, -1) and (1, 1)", meaning any point (x, y) where -1 <= x <=
+1 and -1 <= y <= 1. Generally, it should be defined component-wise like
+this (though I plan on experimenting with alternate notions, hence the
+typeclass).
+
+Notice that @randBetween@ is essentially the same as @randomR@. Why not
+just require the @Random@ typeclass, then? Two reasons:
+
+1. I want to make a bunch of standard types instances of @Between@, and
+    I'd rather not polllute the @Random@ typeclass.
+
+2. @Random@ requires both @randomR@ and @random@ - for some types
+    @random@ doesn't make sense.
+-}
+class Between a
+  where
+    isBetween :: a -> (a, a) -> Bool
+    randBetween :: (a, a) -> StdGen -> (a, StdGen)
+
+{- |
+Often, we may want to restrict a function to some inputs (that is, bound
+the function). This function does exactly that. Arguments are structured
+to allow for infix notation: @f `boundTo` ((-1, -1), (1, 1))@.
+-}
+boundTo :: (Between a) => (a -> b) -> (a, a) -> a -> Maybe b
+boundTo f bounds p = case p `isBetween` bounds of
+    True  -> Just $ f p
+    False -> Nothing
 
 {- |
 The function that you wish to optimize should be of the form @f ::
@@ -322,7 +355,7 @@ upAddLocalDynamic c = Updater f
     f gen (Particle p v _) (PsoGuide lg _) i = (v', gen')
       where
         v' = pAdd v $ pScale (c i) dl
-        (dl, gen') = randomR (pZero, pSubtract lg p) gen
+        (dl, gen') = randBetween (pZero, pSubtract lg p) gen
 
 {- |
 Add to the velocity a random vector between the particle's current
@@ -343,7 +376,7 @@ upAddPrivateDynamic c = Updater f
     f gen (Particle p v (PsoGuide pg _)) _ i = (v', gen')
       where
         v' = pAdd v $ pScale (c i) dp
-        (dp, gen') = randomR (pZero,  pSubtract pg p) gen
+        (dp, gen') = randBetween (pZero,  pSubtract pg p) gen
 
 {- |
 Scale the velocity by the given @Double@.
@@ -409,6 +442,9 @@ The updater with parameters suggested as a starting point in
 Bratton, Daniel, and James Kennedy. \"Defining a standard for particle
 swarm optimization.\" Swarm Intelligence Symposium, 2007. SIS 2007. IEEE.
 IEEE, 2007.
+
+That is, the standard updater with constriction parameter 0.72984 and
+both other constants 2.05.
 
 Normally, one should search for better parameters, since parameter
 choice dramatically influences algorithm performance.
@@ -485,8 +521,11 @@ instance (Show a, Show b) => Show (Swarm a b)
 If you don't care about such things as the number of particles or the
 particular Updater used, use this function to get a decent attempt at a
 good swarm.
+
+For reference, the swarm it creates has 50 particles and uses the
+@'upDefault'@ updater.
 -}
-defaultSwarm :: (PsoVect a, Random a, Grade b)
+defaultSwarm :: (PsoVect a, Grade b)
     => (a -> b)  -- ^ Function to optimize
     -> (a, a)    -- ^ Bounds to begin search
     -> StdGen    -- ^ Random generator
@@ -497,7 +536,7 @@ defaultSwarm f bounds gen = randomSwarm gen 50 bounds f upDefault
 Create a swarm by randomly generating n points within the bounds, making
 all the particles start at these points with velocity zero.
 -}
-randomSwarm :: (PsoVect a, Random a, Grade b) 
+randomSwarm :: (PsoVect a, Grade b) 
     => StdGen   -- ^ A random seed
     -> Int      -- ^ Number of particles
     -> (a,a)    -- ^ Bounds to create particles in
@@ -510,7 +549,7 @@ randomSwarm g n bounds f up = (createSwarm ps f up, g')
     getSomeRands 0 gen acc = (acc,gen)
     getSomeRands m gen acc = getSomeRands (m-1) gen' (next:acc) 
       where
-        (next, gen') = randomR bounds gen
+        (next, gen') = randBetween bounds gen
 
 {- | 
 Create a swarm in initial state based on the positions of the particles.
@@ -544,27 +583,76 @@ updateSwarm s@(Swarm ps b f up i) g = (Swarm qs b' f up (i+1), g')
         minBest = case (val best) `betterThan` (val $ pGuide p') of
             True -> best
             _    -> pGuide p'
+
 {- |
 Update a swarm repeatedly. Absorbs a @StdGen@.
--}
 
+If you have a large swarm, this fills up your space quickly, and often
+unnecessarily, since you don't really want to keep all of this data
+around. For example - if you are searching with 50 particles in 50
+dimensional space, 1000 iterations will end up storing over 1000 * 50 *
+50 * 3 = 7500000 doubles.
+
+In such a case, you may be better off using iterateWhile, which doesn't
+keep track of old swarms, and doesn't consume additional stack space (I
+think).
+-}
 iterateSwarm :: (PsoVect a, Grade b) => Swarm a b -> StdGen -> [Swarm a b]
-iterateSwarm s g = map fst $ iterate (uncurry updateSwarm) (s,g)
+iterateSwarm s g = iterate' (s, g)
+  where
+    -- Trying to force strict evaluation
+    iterate' (s@(Swarm _ b _ _ _), g)  = b `seq` s : iterate' (updateSwarm s g)
 
 {- |
-If you don't want to think about all of this stuff, don't worry. Just use this function to get a nice, easy optimization for a give function - none of this nonsense about creating swarms or what-not.
+Continue iterating and searching until the condition is met. It
+continues until the condition evaluates to @True@, then returns the
+first @Swarm@ that evaluates to @False@. Absorbs a @StdGen@.
 
-It returns a @PsoGuide@, which contains both the optimal value and the point at which that optimal value is achieved.
+Typical uses:
+
+Iterate until variance of particles is below 0.001:
+
+    iterateWhile ((> 0.001) . posVariance) s gen
+
+Iterate until the grade of at least @good@ is reached:
+
+    iterateWhile ((`worseThan` good) . val . gGuide) s gen
+
+Iterate @n@ times:
+
+    iterateWhile ((<n) . iteration) s gen
 -}
-easyOptimize :: (PsoVect a, Random a, Grade b) 
+iterateWhile :: (PsoVect a, Grade b) 
+    => (Swarm a b -> Bool)  -- ^ Condition to meet
+    -> Swarm a b            -- ^ Swarm to update
+    -> StdGen               -- ^ Random seed
+    -> Swarm a b
+iterateWhile f s gen = if f s
+    then iterateWhile f s' gen'
+    else s
+  where
+    (s', gen') = updateSwarm s gen
+
+{- |
+If you don't want to think about all of this stuff, don't worry. Just
+use this function to get a nice, easy optimization for a give function -
+none of this nonsense about creating swarms or what-not.
+
+It returns a @PsoGuide@, which contains both the optimal value and the
+point at which that optimal value is achieved.
+
+For reference, the swarm it uses is just created by @'defaultSwarm'@.
+-}
+easyOptimize :: (PsoVect a, Grade b) 
     => (a -> b)  -- ^ Function to optimize
     -> (a, a)    -- ^ Bounds to create particles within
     -> Integer   -- ^ Number of iterations
     -> StdGen    -- ^ Generator to use
     -> PsoGuide a b 
-easyOptimize f bounds n gen = gGuide . (`genericIndex` n) . iterateSwarm swarm $ gen'
+easyOptimize f bounds n gen = gGuide $ 
+    iterateWhile ((<n) . iteration) swarm gen'
   where
-    (swarm, gen') = randomSwarm gen 50 bounds f upDefault
+    (swarm, gen') = defaultSwarm f bounds gen
 
 {- | 
 Update a particle one step. Called by updateSwarm and requires the swarm
@@ -574,21 +662,7 @@ updateParticle :: (PsoVect a, Grade b) => Particle a b -> Swarm a b -> StdGen ->
 updateParticle part@(Particle p v pg) (Swarm ps lg f up i) g = (Particle p' v' pg', g') 
   where
     p' = pAdd p v'
-    {-
-    dp = pSubtract (pt bp) p
-        -- ^ Difference between point and private guide best
-    dg = pSubtract (pt b) p
-        -- ^ Difference between point and local guide best
-    (r1, g') = randomR (pZero,dp) g
-    (r2, g'') = randomR (pZero,dg) g'
-    -}
     (v',g') = (newVel up) g part lg i
-    {-
-    newVel (Updater f) = pScale chi $ 
-        pAdd v $ 
-        pAdd (pScale c1 dp) $
-        pScale c2 dg
-    -}
     pg' = case (val pg) `betterThan` (f p') of
         False  -> PsoGuide p' (f p')
         _      -> pg

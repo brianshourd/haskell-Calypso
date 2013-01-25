@@ -17,9 +17,9 @@ The type @Maybe a@ is graded so that @Nothing@ is worse than @Just x@
 for any @x@.
 -}
 
-module Pso.Instance.Grade where
+module Calypso.Instance.Grade where
 
-import Pso.Core
+import Calypso.Core
 
 import Data.Ratio
 

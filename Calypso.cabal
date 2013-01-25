@@ -1,0 +1,28 @@
+name:                Calypso
+version:             0.1.0
+synopsis:            Particle swarm optimization module
+description:         A module for performing particle swarm
+    optimization. The focus is two-fold: first on being easy to use,
+    second on allowing full customization. Many different flavors of PSO
+    are supported by default, and many more can be implemented.
+     
+license:             BSD3
+license-file:        LICENSE
+author:              Brian Shourd
+maintainer:          brian.shourd@gmail.com
+stability:           alpha
+homepage:            https://github.com/brianshourd/haskell-Calypso
+copyright:           2013
+category:            Optimization
+build-type:          Simple
+cabal-version:       >=1.8
+source-repository head
+    type:            git
+    location:        git://github.com/brianshourd/haskell-Calypso
+
+library
+  exposed-modules:      Calypso
+                        Calypso.Core
+                        Calypso.Instances.Grade
+                        Calypso.Instances.PsoVect
+  build-depends:        base ==4.5.*, random ==1.0.*
