@@ -385,11 +385,11 @@ Iterate until variance of particles is below 0.001:
 
     iterateWhile ((> 0.001) . posVariance) s gen
 
-Iterate until the grade of at least @good@ is reached:
+Iterate until the grade of at least `good` is reached:
 
     iterateWhile ((`worseThan` good) . val . gGuide) s gen
 
-Iterate @n@ times:
+Iterate `n` times:
 
     iterateWhile ((<n) . iteration) s gen
 
