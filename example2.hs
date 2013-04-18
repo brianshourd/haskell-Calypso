@@ -1,7 +1,5 @@
 import Calypso
 
-import Control.Applicative (pure, (<*>), (<$>))
-import Control.Monad ((=<<))
 import System.Random (StdGen, mkStdGen)
 
 {-
