@@ -44,6 +44,8 @@ main = do
     -- PsoGuide from a swarm, which contains both the best value found
     -- and the point at which it was found
     let bs = map gGuide ss
+
+    printExplanation
     
     -- Let's print some of these guides, just to see how things are
     -- going
@@ -68,3 +70,7 @@ main = do
 -- A helper function, useful for printing out selections from a list
 printTheseItems :: (Show a) => [a] -> [Int] -> [IO ()]
 printTheseItems xs = map (\i -> putStrLn $ (show i) ++ ": " ++ (show $ xs !! i))
+
+-- Print out an explanation when the program is run
+printExplanation :: IO ()
+printExplanation = putStrLn "This program calculates the minimum of the function x^2 + y^2 using particle swarm optimization, giving helpful status updates along the way."
