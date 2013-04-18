@@ -17,7 +17,7 @@ the wikipedia article puts forward a method using /inertia weight/. The
 two are similar, but not identical.
 
 For an overview of how to use this module, see the README available at
-<https://github.com/brianshourd/haskell-PSO/blob/master/README.md>. 
+<https://github.com/brianshourd/haskell-Calypso/blob/master/README.md>. 
 -}
 
 module Calypso.Core
@@ -58,6 +58,7 @@ module Calypso.Core
     iterateWhile,
     -- * Helper functions
     boundTo,
+    pSqMag,
     -- * Data Structures
     PsoGuide(..), 
     Particle(..), 
@@ -90,7 +91,7 @@ instance of @PsoVect@ and that @Double@ is an instance of @Grade@ (with
 so you don't need to create these instances yourself.
 
 For more examples, see the examples included with the code (which should
-be available at <https://github.com/brianshourd/haskell-PSO>).
+be available at <https://github.com/brianshourd/haskell-Calypso>).
 -}
 
 {- | 
