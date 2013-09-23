@@ -70,8 +70,6 @@ module Calypso.Core
 --    scoreVariance
     ) where
 
-import Control.DeepSeq
-import Data.Function (on)
 import Data.List (foldl', genericIndex)
 import Data.Monoid
 import System.Random

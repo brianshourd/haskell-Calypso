@@ -23,6 +23,6 @@ source-repository head
 library
   exposed-modules:      Calypso
                         Calypso.Core
-                        Calypso.Instances.Grade
-                        Calypso.Instances.PsoVect
+                        Calypso.Instance.Grade
+                        Calypso.Instance.PsoVect
   build-depends:        base ==4.5.*, random ==1.0.*
