@@ -1,5 +1,5 @@
 name:                Calypso
-version:             0.1.0
+version:             0.1.1
 synopsis:            Particle swarm optimization module
 description:         A module for performing particle swarm
     optimization. The focus is two-fold: first on being easy to use,
