@@ -1,3 +1,4 @@
+{-# LANGUAGE BangPatterns #-}
 {-# LANGUAGE TypeSynonymInstances #-}
 {-# LANGUAGE FlexibleInstances #-}
 
@@ -70,8 +71,6 @@ module Calypso.Core
 --    scoreVariance
     ) where
 
-import Control.DeepSeq
-import Data.Function (on)
 import Data.List (foldl', genericIndex)
 import Data.Monoid
 import System.Random
@@ -575,10 +574,10 @@ well as a new generator to use.
 Arguments ordered to allow @iterate (uncurry updateSwarm)@
 -}
 updateSwarm :: (PsoVect a, Grade b) => Swarm a b -> StdGen -> (Swarm a b, StdGen)
-updateSwarm s@(Swarm ps b f up i) g = (Swarm qs b' f up (i+1), g') 
+updateSwarm s@(Swarm ps b f up i) !g = (Swarm qs b' f up (i+1), g') 
   where
     (qs, g', b') = foldl' helper ([], g, b) ps
-    helper (acc, gen, best) p = (p':acc, gen', minBest) 
+    helper (acc, gen, !best) p = (p':acc, gen', minBest) 
       where
         (p',gen') = updateParticle p s gen
         minBest = case (val best) `betterThan` (val $ pGuide p') of
@@ -662,7 +661,7 @@ that the particle belongs to as a parameter
 updateParticle :: (PsoVect a, Grade b) => Particle a b -> Swarm a b -> StdGen -> (Particle a b, StdGen)
 updateParticle part@(Particle p v pg) (Swarm ps lg f up i) g = (Particle p' v' pg', g') 
   where
-    p' = pAdd p v'
+    p' = pAdd v' p
     (v',g') = (newVel up) g part lg i
     pg' = case (val pg) `betterThan` (f p') of
         False  -> PsoGuide p' (f p')
